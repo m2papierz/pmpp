@@ -1,0 +1,24 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 26 },
+  "configurePresets": [
+    {
+        "name": "linux-release",
+        "displayName": "Linux Release (WSL)",
+        "generator": "Ninja",
+        "binaryDir": "${sourceDir}/build",
+        "cacheVariables": {
+            "CMAKE_BUILD_TYPE": "Release",
+            "CMAKE_CUDA_ARCHITECTURES": "89"
+        }
+    }
+  ],
+  "buildPresets": [
+    {
+        "name": "linux-release",
+        "configurePreset": "linux-release",
+        "jobs": 0
+    }
+  ],
+  "testPresets": []
+}
