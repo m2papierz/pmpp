@@ -21,3 +21,4 @@ add_compile_options(
 add_subdirectory(utils)
 add_subdirectory(chapters/ch02)
 add_subdirectory(chapters/ch03)
+add_subdirectory(chapters/ch04)
