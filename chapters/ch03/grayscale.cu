@@ -3,7 +3,7 @@
 #include <iostream>
 
 #define CHANNELS 3              // bgr format (opencv)
-#define THREADS_PER_BLOCK 32
+#define BLOCK_SIZE 32
 
 __host__ __device__ float computeGrayscale(
     unsigned char rValue,
@@ -42,13 +42,13 @@ __global__ void grayscaleKernel(
     int width,
     int height
 ) {
-    unsigned int col { blockIdx.x * blockDim.x + threadIdx.x };
-    unsigned int row { blockIdx.y * blockDim.y + threadIdx.y };
+    int row { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
+    int col { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
 
     if (col < width && row < height) {
         // Get 1D offset for grayscale image and rgb image
-        unsigned int grayOffset { row * width + col };
-        unsigned int rgbOffset { grayOffset * CHANNELS };
+        int grayOffset { row * width + col };
+        int rgbOffset { grayOffset * CHANNELS };
         
         // Read rgb values 
         unsigned char b { inputImage[rgbOffset] };
@@ -66,20 +66,20 @@ void convertToGrayscaleCUDA(
     int width,
     int height
 ) {
-    std::size_t sizeRGB { (std::size_t)(width * height * CHANNELS) };
-    std::size_t sizeGray { (std::size_t)(width * height) };
+    std::size_t sizeRGB { static_cast<std::size_t>(width * height * CHANNELS) };
+    std::size_t sizeGray { static_cast<std::size_t>(width * height) };
 
     // Allocate device memory
     unsigned char *inputImage_d { nullptr }, *outputImage_d { nullptr };
-    CUDA_CHECK(cudaMalloc((void**)&inputImage_d, sizeRGB));
-    CUDA_CHECK(cudaMalloc((void**)&outputImage_d, sizeGray));
+    CUDA_CHECK(cudaMalloc(&inputImage_d, sizeRGB));
+    CUDA_CHECK(cudaMalloc(&outputImage_d, sizeGray));
 
     // Copy image to device memory
     CUDA_CHECK(cudaMemcpy(inputImage_d, inputImage_h, sizeRGB, cudaMemcpyHostToDevice));
 
     // Call the kernel
-    dim3 gridSize(ceil(width / THREADS_PER_BLOCK), ceil(height / THREADS_PER_BLOCK));
-    dim3 blockSize(THREADS_PER_BLOCK, THREADS_PER_BLOCK, 1);
+    dim3 gridSize(utils::cdiv(width, BLOCK_SIZE), utils::cdiv(height, BLOCK_SIZE));
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE, 1);
     grayscaleKernel<<<gridSize, blockSize>>>(inputImage_d, outputImage_d, width, height);
 
     // Check launch/runtime errors

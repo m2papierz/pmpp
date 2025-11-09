@@ -1,7 +1,7 @@
 #include "utils.hpp"
 #include <iostream>
 
-#define THREADS_PER_BLOCK 32
+#define BLOCK_SIZE 32
 
 namespace Constants {
     constexpr int n { 2048 };
@@ -15,8 +15,8 @@ __global__ void matMulKernel(
     float* C,
     int n, int m, int k
 ) {
-    unsigned int col { blockIdx.x * blockDim.x + threadIdx.x };
-    unsigned int row { blockIdx.y * blockDim.y + threadIdx.y };
+    int row { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
+    int col { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
     if (row < n && col < k) {
         float pValue = 0;
         for (int i { 0 }; i < m; ++i) {
@@ -33,25 +33,22 @@ void matMulCUDA(
     int n, int m, int k 
 ) {
     // Allocate device memory
-    std::size_t sizeA { (std::size_t)(n * m * sizeof(float)) };
-    std::size_t sizeB { (std::size_t)(m * k * sizeof(float)) };
-    std::size_t sizeC { (std::size_t)(n * k * sizeof(float)) };
+    std::size_t sizeA { static_cast<std::size_t>(n * m * sizeof(float)) };
+    std::size_t sizeB { static_cast<std::size_t>(m * k * sizeof(float)) };
+    std::size_t sizeC { static_cast<std::size_t>(n * k * sizeof(float)) };
 
     float *A_d { nullptr }, *B_d { nullptr }, *C_d { nullptr };
-    CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
-    CUDA_CHECK(cudaMalloc((void**)&B_d, sizeB));
-    CUDA_CHECK(cudaMalloc((void**)&C_d, sizeC));
+    CUDA_CHECK(cudaMalloc(&A_d, sizeA));
+    CUDA_CHECK(cudaMalloc(&B_d, sizeB));
+    CUDA_CHECK(cudaMalloc(&C_d, sizeC));
 
-    // copy matrices to device
+    // Copy matrices to device
     CUDA_CHECK(cudaMemcpy(A_d, A, sizeA, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(B_d, B, sizeB, cudaMemcpyHostToDevice));
 
     // Call the kernel
-    dim3 blockSize(THREADS_PER_BLOCK, THREADS_PER_BLOCK, 1);
-    dim3 gridSize(
-        (k + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK,
-        (n + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK
-    );
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE, 1);
+    dim3 gridSize(utils::cdiv(k, BLOCK_SIZE), utils::cdiv(n, BLOCK_SIZE));
     matMulKernel<<<gridSize, blockSize>>>(A_d, B_d, C_d, n, m, k);
 
     // Check launch/runtime errors

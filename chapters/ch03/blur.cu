@@ -4,7 +4,7 @@
 
 #define CHANNELS 3               // bgr format (opencv)
 #define BLUR_SIZE 3              // 1 pixel on each side giving a 3x3 box
-#define THREADS_PER_BLOCK 32
+#define BLOCK_SIZE 32
 
 __host__ __device__ __forceinline__ unsigned char clamp_u8(float x) {
     x = fminf(fmaxf(x, 0.f), 255.f);
@@ -52,8 +52,9 @@ __global__ void blurKernel(
     int width,
     int height
 ) {
-    unsigned int row { blockIdx.y*blockDim.y + threadIdx.y };
-    unsigned int col { blockIdx.x*blockDim.x + threadIdx.x };
+    int row { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
+    int col { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
+
     if (row < height && col < width) {
         int pixels { 0 };
         int pixValR { 0 }, pixValG { 0 }, pixValB { 0 };
@@ -61,8 +62,8 @@ __global__ void blurKernel(
         // Get average of the surrounding BLUR_SIZE x BLUR_SIZE box
         for (int blurRow = -BLUR_SIZE; blurRow < BLUR_SIZE + 1; ++blurRow) {
             for (int blurCol = -BLUR_SIZE; blurCol < BLUR_SIZE + 1; ++blurCol) {
-                unsigned int currentRow { row + blurRow };
-                unsigned int currentCol { col + blurCol };
+                int currentRow { row + blurRow };
+                int currentCol { col + blurCol };
                 // Verify we have a valid image pixel
                 if (currentRow<height && currentCol<width) {
                     size_t rgbOffset { ((size_t)currentRow * width + currentCol) * CHANNELS };
@@ -97,8 +98,8 @@ void blurImageCUDA(
     CUDA_CHECK(cudaMemcpy(inputImage_d, inputImage_h, size, cudaMemcpyHostToDevice));
 
     // Call the kernel
-    dim3 gridSize(ceil(width / THREADS_PER_BLOCK), ceil(height / THREADS_PER_BLOCK));
-    dim3 blockSize(THREADS_PER_BLOCK, THREADS_PER_BLOCK, 1);
+    dim3 gridSize(utils::cdiv(width, BLOCK_SIZE), utils::cdiv(height, BLOCK_SIZE));
+    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE, 1);
     blurKernel<<<gridSize, blockSize>>>(inputImage_d, outputImage_d, width, height);
 
     // Check launch/runtime errors

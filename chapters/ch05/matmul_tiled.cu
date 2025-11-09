@@ -18,14 +18,14 @@ __global__ void matMulKernel(
     __shared__ float Mds[TILE_WIDTH][TILE_WIDTH];
     __shared__ float Nds[TILE_WIDTH][TILE_WIDTH];
 
-    unsigned int bx { blockIdx.x };
-    unsigned int by { blockIdx.y };
-    unsigned int tx { threadIdx.x };
-    unsigned int ty { threadIdx.y };
+    int bx { static_cast<int>(blockIdx.x) };
+    int by { static_cast<int>(blockIdx.y) };
+    int tx { static_cast<int>(threadIdx.x) };
+    int ty { static_cast<int>(threadIdx.y) };
 
     // Identify the row and column of the C element to work on
-    unsigned int row { by * TILE_WIDTH + ty };
-    unsigned int col { bx * TILE_WIDTH + tx };
+    int row { by * TILE_WIDTH + ty };
+    int col { bx * TILE_WIDTH + tx };
 
     // Loop over the A and B tiles required to compute C element
     float pValue { 0 };
@@ -61,15 +61,15 @@ void matMulCUDA(
     float* C,
     int n, int m, int k
 ) {
-    std::size_t sizeM { (std::size_t)(n * m * sizeof(float)) };
-    std::size_t sizeN { (std::size_t)(m * k * sizeof(float)) };
-    std::size_t sizeP { (std::size_t)(n * k * sizeof(float)) };
+    std::size_t sizeM { static_cast<std::size_t>(n * m * sizeof(float)) };
+    std::size_t sizeN { static_cast<std::size_t>(m * k * sizeof(float)) };
+    std::size_t sizeP { static_cast<std::size_t>(n * k * sizeof(float)) };
 
     // Allocate device memory
     float *M_d { nullptr }, *N_d { nullptr }, *P_d { nullptr };
-    CUDA_CHECK(cudaMalloc((void**)&M_d, sizeM));
-    CUDA_CHECK(cudaMalloc((void**)&N_d, sizeN));
-    CUDA_CHECK(cudaMalloc((void**)&P_d, sizeP));
+    CUDA_CHECK(cudaMalloc(&M_d, sizeM));
+    CUDA_CHECK(cudaMalloc(&N_d, sizeN));
+    CUDA_CHECK(cudaMalloc(&P_d, sizeP));
 
     // Copy data from host do device
     CUDA_CHECK(cudaMemcpy(M_d, A, sizeM, cudaMemcpyHostToDevice));
@@ -77,10 +77,7 @@ void matMulCUDA(
 
     // Call the kernel
     dim3 blockSize(TILE_WIDTH, TILE_WIDTH, 1);
-    dim3 gridSize(
-        (k + TILE_WIDTH - 1) / TILE_WIDTH,
-        (n + TILE_WIDTH - 1) / TILE_WIDTH
-    );
+    dim3 gridSize(utils::cdiv(k, TILE_WIDTH), utils::cdiv(n, TILE_WIDTH));
     matMulKernel<<<gridSize, blockSize>>>(M_d, N_d, P_d, n, m, k);
 
     // Check launch/runtime errors

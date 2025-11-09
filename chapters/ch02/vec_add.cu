@@ -2,7 +2,7 @@
 #include <vector>
 #include <iostream>
 
-#define THREADS_PER_BLOCK 32
+#define BLOCK_SIZE 32
 
 // vector addition in plain C
 void vecAddCPU(const float* A_h, const float* B_h, float* C_h, int n) {
@@ -13,7 +13,7 @@ void vecAddCPU(const float* A_h, const float* B_h, float* C_h, int n) {
 
 // CUDA kernel for vector addition
 __global__ void vecAddKernel(const float* A, const float* B, float* C, int n) {
-    unsigned int i { threadIdx.x + blockDim.x * blockIdx.x };
+    int i { static_cast<int>(threadIdx.x + blockDim.x * blockIdx.x) };
     if (i < n) {
         C[i] = A[i] + B[i];
     }
@@ -25,16 +25,16 @@ void vecAddCUDA(const float* A_h, const float* B_h, float* C_h, int n) {
     
     // Allocate device memory for A, B, and C
     float *A_d { nullptr }, *B_d { nullptr }, *C_d { nullptr };
-    CUDA_CHECK(cudaMalloc((void**)&A_d, size));
-    CUDA_CHECK(cudaMalloc((void**)&B_d, size));
-    CUDA_CHECK(cudaMalloc((void**)&C_d, size));
+    CUDA_CHECK(cudaMalloc(&A_d, size));
+    CUDA_CHECK(cudaMalloc(&B_d, size));
+    CUDA_CHECK(cudaMalloc(&C_d, size));
 
     // Copy A, and B to device memory
     CUDA_CHECK(cudaMemcpy(A_d, A_h, size, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(B_d, B_h, size, cudaMemcpyHostToDevice));
 
     // Call kernel to launch a grid of threads
-    vecAddKernel<<<(n + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(A_d, B_d, C_d, n);
+    vecAddKernel<<<utils::cdiv(n, BLOCK_SIZE), BLOCK_SIZE>>>(A_d, B_d, C_d, n);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 

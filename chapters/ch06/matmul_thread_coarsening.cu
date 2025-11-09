@@ -20,14 +20,14 @@ __global__ void matMulKernel(
     __shared__ float Ads[TILE_WIDTH][TILE_WIDTH];
     __shared__ float Bds[TILE_WIDTH][TILE_WIDTH];
 
-    unsigned int bx { blockIdx.x };
-    unsigned int by { blockIdx.y };
-    unsigned int tx { threadIdx.x };
-    unsigned int ty { threadIdx.y };
+    int bx { static_cast<int>(blockIdx.x) };
+    int by { static_cast<int>(blockIdx.y) };
+    int tx { static_cast<int>(threadIdx.x) };
+    int ty { static_cast<int>(threadIdx.y) };
 
     // Identify the row and column of the C element to work on
-    unsigned int row { by * TILE_WIDTH + ty };
-    unsigned int colStart { bx * TILE_WIDTH * COARSE_FACTOR + tx };
+    int row { by * TILE_WIDTH + ty };
+    int colStart { bx * TILE_WIDTH * COARSE_FACTOR + tx };
 
     // Initialize cValue for all output elements
     float cValue[COARSE_FACTOR];
@@ -45,7 +45,7 @@ __global__ void matMulKernel(
             Ads[ty][tx] = 0.0f;
 
         for (int c { 0 }; c < COARSE_FACTOR; ++c) {
-            unsigned int col { colStart + c * TILE_WIDTH };
+            int col { colStart + c * TILE_WIDTH };
 
             // Collaborative loading of B tile into shared memory
             if ((ph*TILE_WIDTH + ty) < m && (col < k))
@@ -62,7 +62,7 @@ __global__ void matMulKernel(
     }
 
     for (int c { 0 }; c < COARSE_FACTOR; ++c) {
-        unsigned int col { colStart + c*TILE_WIDTH };
+        int col { colStart + c*TILE_WIDTH };
         if (row < n && col < k)
             C[row*k + col] = cValue[c];
     }
@@ -75,14 +75,14 @@ void matMulCUDA(
     int n, int m, int k
 ) {
     // Allocate device memory
-    std::size_t sizeA { (std::size_t)(n * m * sizeof(float)) };
-    std::size_t sizeB { (std::size_t)(m * k * sizeof(float)) };
-    std::size_t sizeC { (std::size_t)(n * k * sizeof(float)) };
+    std::size_t sizeA { static_cast<std::size_t>(n * m * sizeof(float)) };
+    std::size_t sizeB { static_cast<std::size_t>(m * k * sizeof(float)) };
+    std::size_t sizeC { static_cast<std::size_t>(n * k * sizeof(float)) };
 
     float *A_d { nullptr }, *B_d { nullptr }, *C_d { nullptr };
-    CUDA_CHECK(cudaMalloc((void**)&A_d, sizeA));
-    CUDA_CHECK(cudaMalloc((void**)&B_d, sizeB));
-    CUDA_CHECK(cudaMalloc((void**)&C_d, sizeC));
+    CUDA_CHECK(cudaMalloc(&A_d, sizeA));
+    CUDA_CHECK(cudaMalloc(&B_d, sizeB));
+    CUDA_CHECK(cudaMalloc(&C_d, sizeC));
 
     // copy matrices to device
     CUDA_CHECK(cudaMemcpy(A_d, A, sizeA, cudaMemcpyHostToDevice));
@@ -91,8 +91,8 @@ void matMulCUDA(
     // Call the kernel
     dim3 blockSize(TILE_WIDTH, TILE_WIDTH, 1);
     dim3 gridSize(
-        (k + TILE_WIDTH * COARSE_FACTOR - 1) / (TILE_WIDTH * COARSE_FACTOR),
-        (n + TILE_WIDTH - 1) / TILE_WIDTH
+        utils::cdiv(n, TILE_WIDTH * COARSE_FACTOR),
+        utils::cdiv(n, TILE_WIDTH)
     );
     matMulKernel<<<gridSize, blockSize>>>(A_d, B_d, C_d, n, m, k);
 
