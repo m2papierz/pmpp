@@ -3,6 +3,10 @@
 #include <functional>
 
 namespace utils {
+    inline unsigned int cdiv(const int x, const int div) {
+        return (x + div - 1) / div;
+    }
+
     template <typename F>
     double executeAndTimeFunction(F&& func) {
         auto start { std::chrono::high_resolution_clock::now() };
