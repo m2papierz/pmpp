@@ -3,21 +3,10 @@
 
 #define THREADS_PER_BLOCK 32
 
-void matMulCPU(
-    const float* A,
-    const float* B,
-    float* C,
-    int n, int m, int k
-) {
-    for (int row { 0 }; row < n; ++row) {
-        for (int col { 0 }; col < k; ++col) {
-            float pValue { 0 };
-            for (int i { 0 }; i < m; ++i) {
-                pValue += A[row * m + i] * B[i * k + col];
-            }
-            C[row * k + col] = pValue;
-        }
-    }
+namespace Constants {
+    constexpr int n { 2048 };
+    constexpr int m { 1024 };
+    constexpr int k { 2048 }; 
 }
 
 __global__ void matMulKernel(
@@ -80,27 +69,26 @@ void matMulCUDA(
 
 
 int main() {
-    constexpr int n { 2048 };
-    constexpr int m { 1024 };
-    constexpr int k { 2048 };
-
-    std::vector<float> A(n * m);
-    std::vector<float> B(m * k);
-    std::vector<float> C_cpu(n * k);
-    std::vector<float> C_gpu(n * k);
+    std::vector<float> A(Constants::n * Constants::m);
+    std::vector<float> B(Constants::m * Constants::k);
+    std::vector<float> C_cpu(Constants::n * Constants::k);
+    std::vector<float> C_gpu(Constants::n * Constants::k);
 
     // Initialize matrices with random values
-    for (int i { 0 }; i < n * m; ++i) {
+    for (int i { 0 }; i < Constants::n * Constants::m; ++i) {
         A[i] = static_cast<float>(rand()) / RAND_MAX;
     }
-    for (int i { 0 }; i < m * k; ++i) {
+    for (int i { 0 }; i < Constants::m * Constants::k; ++i) {
         B[i] = static_cast<float>(rand()) / RAND_MAX;
     }
 
     // Perform matmul in C and time it
     double secondsCPU {
         utils::executeAndTimeFunction([&]{
-            matMulCPU(A.data(), B.data(), C_cpu.data(), n, m, k);
+            utils::matMulCPU(
+                A.data(), B.data(), C_cpu.data(),
+                Constants::n, Constants::m, Constants::k
+            );
         })
     };
     std::cout << "CPU version elapsed time: " << secondsCPU << "seconds\n";
@@ -108,13 +96,18 @@ int main() {
     // Perform matmul in CUDA and time it
     float secondsGPU {
         utils::cudaExecuteAndTimeFunction([&]{
-            matMulCUDA(A.data(), B.data(), C_gpu.data(), n, m, k);
+            matMulCUDA(
+                A.data(), B.data(), C_gpu.data(),
+                Constants::n, Constants::m, Constants::k
+            );
         })
     };
     std::cout << "GPU version elapsed time: " << secondsGPU << "seconds\n";
 
     // Check if results are the same
-    bool ok { utils::matricesAlmostEqual(C_cpu, C_gpu, n, k, 1e-6f, 1e-6f) };
+    bool ok { utils::matricesAlmostEqual(
+        C_cpu, C_gpu, Constants::n, Constants::k, 1e-6f, 1e-6f)
+    };
     std::cout << (ok ? "OK\n" : "MISMATCH!\n");
 
     return 0;
