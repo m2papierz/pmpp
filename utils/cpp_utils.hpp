@@ -44,6 +44,23 @@ namespace utils {
         return matricesAlmostEqual(A.data(), B.data(), rows, cols, atol, rtol);
     }
 
+    inline void matMulCPU(
+        const float* A,
+        const float* B,
+        float* C,
+        int n, int m, int k
+    ) {
+        for (int row { 0 }; row < n; ++row) {
+            for (int col { 0 }; col < k; ++col) {
+                float pValue { 0 };
+                for (int i { 0 }; i < m; ++i) {
+                    pValue += A[row * m + i] * B[i * k + col];
+                }
+                C[row * k + col] = pValue;
+            }
+        }
+    }
+
     inline void transposeMatrixTiled(
         const std::vector<float>& inputMat,
         std::vector<float>& outputMat,
