@@ -182,9 +182,8 @@ void conv2dTiledOut(
     int width
 ) {
     // Initialize constant memory
-    std::size_t filterSize {
-        static_cast<std::size_t>((2*radius + 1)*(2*radius + 1) * sizeof(float))
-    };
+    int filterDim { 2*radius + 1 };
+    std::size_t filterSize {static_cast<std::size_t>(filterDim * filterDim * sizeof(float))};
     CUDA_CHECK(uploadConstFilter(filter, filterSize));
 
     // Allocate memory on device
@@ -206,6 +205,51 @@ void conv2dTiledOut(
         1
     );
     conv2dKernelTiledOut<<<gridSize, blockSize>>>(inArray_d, outArray_d, radius, height, width);
+
+    // Check launch/runtime errors
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Copy from device to host
+    CUDA_CHECK(cudaMemcpy(outArray, outArray_d, arraySize, cudaMemcpyDeviceToHost));
+
+    // Free device memory
+    CUDA_CHECK(cudaFree(inArray_d));
+    CUDA_CHECK(cudaFree(outArray_d));
+}
+
+void conv2dTiledCached(
+    const float *inArray,
+    const float *filter,
+    float *outArray,
+    int radius,
+    int height,
+    int width
+) {
+    // Initialize constant memory
+    int filterDim { 2*radius + 1 };
+    std::size_t filterSize {static_cast<std::size_t>(filterDim * filterDim * sizeof(float))};
+    CUDA_CHECK(uploadConstFilter(filter, filterSize));
+
+    // Allocate memory on device
+    std::size_t arraySize { static_cast<std::size_t>(height * width * sizeof(float)) };
+
+    float *inArray_d { nullptr }, *outArray_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&inArray_d, arraySize));
+    CUDA_CHECK(cudaMalloc(&outArray_d, arraySize));
+
+    // Copy arrays to the device
+    CUDA_CHECK(cudaMemcpy(inArray_d, inArray, arraySize, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(outArray_d, outArray, arraySize, cudaMemcpyHostToDevice));
+
+    // Run the kernel
+    const dim3 blockSize(TILE_DIM, TILE_DIM);
+    const dim3 gridSize(
+        static_cast<int>(utils::cdiv(width, TILE_DIM)),
+        static_cast<int>(utils::cdiv(height, TILE_DIM)),
+        1
+    );
+    conv2dKernelTiledCached<<<gridSize, blockSize>>>(inArray_d, outArray_d, radius, height, width);
 
     // Check launch/runtime errors
     CUDA_CHECK(cudaGetLastError());

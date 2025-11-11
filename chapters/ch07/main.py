@@ -1,12 +1,18 @@
 import time
 from dataclasses import dataclass
-from typing import Callable, Tuple
+from typing import Callable, Tuple, List
 
 import torch
 import torch.nn.functional as F
 from torch.testing import assert_close
 
 from utils.py_utils import load_cuda_extension
+
+
+@dataclass
+class KernelSpec:
+    label: str      # Pretty label for printing
+    attr_name: str  # Attribute name on the loaded CUDA extension
 
 
 @dataclass
@@ -52,10 +58,26 @@ def time_cuda_kernel(
     torch.cuda.synchronize()
     return out, time.time() - start
 
-
-def print_result(label: str, elapsed: float, torch_elapsed: float):
+def run_and_check(
+    label: str,
+    kernel_fn: Callable,
+    input_base: torch.Tensor,
+    filter_base: torch.Tensor,
+    radius: int,
+    torch_out: torch.Tensor,
+    torch_time: float,
+):
+    """Time one kernel, check correctness, and print results."""
+    out, elapsed = time_cuda_kernel(kernel_fn, input_base, filter_base, radius)
+    assert_close(
+        out,
+        torch_out,
+        rtol=Constants.rtol,
+        atol=Constants.atol,
+        msg=f"{label} output does not match PyTorch reference.",
+    )
     print(f"\n{label} time: {elapsed:.4f}s")
-    print(f"Speedup {label.lower()}: {torch_elapsed / elapsed:.2f}x")
+    print(f"Speedup {label.lower()}: {torch_time / elapsed:.2f}x")
 
 
 @torch.inference_mode()
@@ -78,70 +100,27 @@ def main():
     )
     print(f"PyTorch time: {torch_time:.4f}s")
 
-    # Basic conv2d kernel
-    basic_out, basic_t = time_cuda_kernel(
-        kernel_fn=cuda_extension.conv2d,
-        input_base=input_base,
-        filter_base=filter_base,
-        radius=Constants.radius,
-    )
-    assert_close(
-        basic_out,
-        torch_out,
-        rtol=Constants.rtol,
-        atol=Constants.atol,
-        msg="Basic CUDA output does not match PyTorch reference.",
-    )
-    print_result("Basic CUDA", basic_t, torch_time)
+    # Kernels to run
+    cases: List[KernelSpec] = [
+        KernelSpec("Basic CUDA", "conv2d"),
+        KernelSpec("Constant-memory CUDA", "conv2dConstMem"),
+        KernelSpec("Tiled-in CUDA", "conv2dTiledIn"),
+        KernelSpec("Tiled-out CUDA", "conv2dTiledOut"),
+        KernelSpec("Tiled-cached CUDA", "conv2dTiledCached"),
+    ]
 
-    # Constant memory conv2d kernel
-    const_out, const_t = time_cuda_kernel(
-        kernel_fn=cuda_extension.conv2dConstMem,
-        input_base=input_base,
-        filter_base=filter_base,
-        radius=Constants.radius,
-    )
-    assert_close(
-        const_out,
-        torch_out,
-        rtol=Constants.rtol,
-        atol=Constants.atol,
-        msg="Constant-memory CUDA output does not match PyTorch.",
-    )
-    print_result("Constant-memory CUDA", const_t, torch_time)
-
-    # Tiled-in conv2d kernel
-    tiled_in_out, tiled_in_t = time_cuda_kernel(
-        kernel_fn=cuda_extension.conv2dTiledIn,
-        input_base=input_base,
-        filter_base=filter_base,
-        radius=Constants.radius,
-    )
-    assert_close(
-        tiled_in_out,
-        torch_out,
-        rtol=Constants.rtol,
-        atol=Constants.atol,
-        msg="Tiled-in CUDA output does not match PyTorch.",
-    )
-    print_result("Tiled-in CUDA", tiled_in_t, torch_time)
-
-    # Tiled-out conv2d kernel
-    tiled_out_out, tiled_out_t = time_cuda_kernel(
-        kernel_fn=cuda_extension.conv2dTiledOut,
-        input_base=input_base,
-        filter_base=filter_base,
-        radius=Constants.radius,
-    )
-    assert_close(
-        tiled_out_out,
-        torch_out,
-        rtol=Constants.rtol,
-        atol=Constants.atol,
-        msg="Tiled-out CUDA output does not match PyTorch.",
-    )
-    print_result("Tiled-out CUDA", tiled_out_t, torch_time)
-
+    # Run all kernels with the same procedure
+    for spec in cases:
+        kernel_fn = getattr(cuda_extension, spec.attr_name)
+        run_and_check(
+            label=spec.label,
+            kernel_fn=kernel_fn,
+            input_base=input_base,
+            filter_base=filter_base,
+            radius=Constants.radius,
+            torch_out=torch_out,
+            torch_time=torch_time,
+        )
 
 if __name__ == "__main__":
     main()

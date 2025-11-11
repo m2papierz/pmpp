@@ -149,3 +149,41 @@ torch::Tensor conv2dTiledOut(
 
     return outArray;
 }
+
+torch::Tensor conv2dTiledCached(
+    const torch::Tensor& inArray,
+    const torch::Tensor& filter,
+    int radius
+) {
+    TORCH_CHECK(inArray.is_cuda(), "input must be CUDA");
+    TORCH_CHECK(filter.is_cuda(), "filter must be CUDA");
+    TORCH_CHECK(inArray.dtype() == torch::kFloat32, "input must be float32");
+    TORCH_CHECK(filter.dtype() == torch::kFloat32, "filter must be float32");
+    TORCH_CHECK(inArray.is_contiguous(), "input must be contiguous");
+    TORCH_CHECK(filter.is_contiguous(), "filter must be contiguous");
+
+    const int height { static_cast<int>(inArray.size(0)) };
+    const int width { static_cast<int>(inArray.size(1)) };
+    auto outArray { torch::empty_like(inArray) };
+
+    const float* inArrayPtr { inArray.data_ptr<float>() };
+    const float* filterPtr { filter.data_ptr<float>() };
+    float* outArrayPtr { outArray.data_ptr<float>() };
+
+    // Initialize constant mememory
+    int filterDim { 2*radius + 1 };
+    std::size_t filterSize { static_cast<std::size_t>(filterDim * filterDim * sizeof(float)) };
+    C10_CUDA_CHECK(uploadConstFilter(filterPtr, filterSize));
+
+    const dim3 blockSize(TILE_DIM, TILE_DIM, 1);
+    const dim3 gridSize(
+        static_cast<int>((width + TILE_DIM - 1) / TILE_DIM),
+        static_cast<int>((height + TILE_DIM - 1) / TILE_DIM),
+        1
+    );
+    cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    conv2dKernelTiledCached<<<gridSize, blockSize, 0 , stream>>>(inArrayPtr, outArrayPtr, radius, height, width);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+    return outArray;
+}

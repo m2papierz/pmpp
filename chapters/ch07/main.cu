@@ -55,6 +55,7 @@ int main() {
     runAndCheck(conv2dConstMem, "Constant memory GPU");
     runAndCheck(conv2dTiledIn, "Tiled IN GPU");
     runAndCheck(conv2dTiledOut, "Tiled OUT GPU");
+    runAndCheck(conv2dTiledCached, "Tiled CACHED GPU");
 
     return 0;
 }

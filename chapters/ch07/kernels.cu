@@ -143,3 +143,48 @@ __global__ void conv2dKernelTiledOut(
     if (outRow < height && outCol < width)
         outArray[outRow*width + outCol] = pValue;
 }
+
+
+__global__ void conv2dKernelTiledCached(
+    const float *inArray,
+    float *outArray,
+    int radius,
+    int height,
+    int width
+) {
+    int row { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
+    int col { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
+
+    // Load tile to the shared memory
+    __shared__ float inArrays_s[TILE_DIM][TILE_DIM];
+    if (row < height && col < width) {
+        inArrays_s[threadIdx.y][threadIdx.x] = inArray[row*width + col];
+    } else {
+        inArrays_s[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    // Computing the output elements
+    if (row < height && col < width) {
+        float pValue { 0.0f };
+
+        for (int fRow { 0 }; fRow < 2*radius + 1; fRow++) {
+            for (int fCol { 0 }; fCol < 2*radius + 1; fCol++) {
+                if (threadIdx.x - radius + fCol < TILE_DIM && threadIdx.y - radius + fRow < TILE_DIM) {
+                    pValue += constFilter[fRow][fCol] * inArrays_s[threadIdx.y - radius + fRow][threadIdx.x - radius + fCol];
+                } else {
+                    if (
+                        row - radius + fRow >= 0 &&
+                        row - radius + fRow < height &&
+                        col - radius + fCol >= 0 &&
+                        col - radius + fCol < width
+                    ) {
+                        pValue += constFilter[fRow][fCol] * inArray[(row - radius + fRow)*width + col - radius + fCol];
+                    }
+                }
+            }
+        }
+        if (row < height && col < width)
+            outArray[row*width + col] = pValue;
+    }
+}
