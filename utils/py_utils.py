@@ -42,9 +42,11 @@ def resolve_ext_build_dir(
         Absolute path to the created build directory.
     """
     # Determine anchor: the caller's file (or a provided path)
-    anchor = Path(anchor_path).resolve() if anchor_path is not None else Path(
-        inspect.stack()[1].filename
-    ).resolve()
+    anchor = (
+        Path(anchor_path).resolve()
+        if anchor_path is not None
+        else Path(inspect.stack()[1].filename).resolve()
+    )
 
     anchor_dir = anchor if anchor.is_dir() else anchor.parent
 
