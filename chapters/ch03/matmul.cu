@@ -102,7 +102,7 @@ int main() {
     std::cout << "GPU version elapsed time: " << secondsGPU << "seconds\n";
 
     // Check if results are the same
-    bool ok { utils::matricesAlmostEqual(
+    bool ok { utils::almostEqual(
         C_cpu, C_gpu, Constants::n, Constants::k, 1e-6f, 1e-6f)
     };
     std::cout << (ok ? "OK\n" : "MISMATCH!\n");

@@ -1,6 +1,10 @@
 #pragma once
-#include <chrono>
+#include <chrono>     // std::chrono::high_resolution_clock
+#include <cmath>      // std::fabs
+#include <cstddef>    // std::size_t
+#include <vector>     // std::vector
 #include <functional>
+
 
 namespace utils {
     inline unsigned int cdiv(const int x, const int div) {
@@ -14,38 +18,6 @@ namespace utils {
         auto end { std::chrono::high_resolution_clock::now() };
         std::chrono::duration<double> diff { end - start };
         return diff.count();
-    }
-
-    inline bool matricesAlmostEqual(
-        const float* A,
-        const float* B,
-        std::size_t rows,
-        std::size_t cols,
-        float atol = 1e-6f,
-        float rtol = 1e-6f
-    ) {
-        const std::size_t n = rows * cols;
-        for (std::size_t i = 0; i < n; ++i) {
-            float diff = std::fabs(A[i] - B[i]);
-            float tol = atol + rtol * std::fabs(B[i]);
-            if (diff > tol) { return false; }
-        }
-        return true;
-    }
-
-    // convenience for std::vector<float>
-    inline bool matricesAlmostEqual(
-        const std::vector<float>& A,
-        const std::vector<float>& B,
-        std::size_t rows,
-        std::size_t cols,
-        float atol = 1e-6f,
-        float rtol = 1e-6f
-    ) {
-        if (A.size() != B.size() || A.size() != rows * cols) {
-            return false;
-        }
-        return matricesAlmostEqual(A.data(), B.data(), rows, cols, atol, rtol);
     }
 
     inline void matMulCPU(
@@ -86,5 +58,93 @@ namespace utils {
 
             }
         }
+    }
+
+    inline bool almostEqual(
+        const float* A,
+        const float* B,
+        std::size_t n,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        for (std::size_t i  { 0 }; i < n; ++i) {
+            float diff { std::fabs(A[i] - B[i]) };
+            float tol { atol + rtol * std::fabs(B[i]) };
+            if (diff > tol) { return false; }
+        }
+        return true;
+    }
+
+    inline bool almostEqual(
+        const std::vector<float>& A,
+        const std::vector<float>& B,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        if (A.size() != B.size()) { return false; }
+        return almostEqual(A.data(), B.data(), A.size(), atol, rtol);
+    }
+
+    inline bool almostEqual(
+        const float* A,
+        const float* B,
+        std::size_t rows,
+        std::size_t cols,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        const std::size_t n { rows * cols };
+        for (std::size_t i { 0 }; i < n; ++i) {
+            float diff { std::fabs(A[i] - B[i]) };
+            float tol { atol + rtol * std::fabs(B[i]) };
+            if (diff > tol) { return false; }
+        }
+        return true;
+    }
+
+    inline bool almostEqual(
+        const std::vector<float>& A,
+        const std::vector<float>& B,
+        std::size_t rows,
+        std::size_t cols,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        if (A.size() != B.size() || A.size() != rows * cols) {
+            return false;
+        }
+        return almostEqual(A.data(), B.data(), rows, cols, atol, rtol);
+    }
+
+    inline bool almostEqual(
+        const float* A,
+        const float* B,
+        std::size_t depth,
+        std::size_t height,
+        std::size_t width,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        const std::size_t n { depth * height * width };
+        for (std::size_t i {0 }; i < n; ++i) {
+            float diff { std::fabs(A[i] - B[i]) };
+            float tol { atol + rtol * std::fabs(B[i]) };
+            if (diff > tol) { return false; }
+        }
+        return true;
+    }
+
+    inline bool almostEqual(
+        const std::vector<float>& A,
+        const std::vector<float>& B,
+        std::size_t depth,
+        std::size_t height,
+        std::size_t width,
+        float atol = 1e-6f,
+        float rtol = 1e-6f
+    ) {
+        const std::size_t n { depth * height * width };
+        if (A.size() != B.size() || A.size() != n) { return false; }
+        return almostEqual(A.data(), B.data(), depth, height, width, atol, rtol);
     }
 } // namespace utils
