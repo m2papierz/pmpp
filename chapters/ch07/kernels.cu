@@ -19,6 +19,7 @@ __global__ void conv2dKernel(
     int outRow { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
     int outCol { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
 
+    // Calculating output elements
     float pValue { 0.0f };
     for (int fRow { 0 }; fRow < 2*radius + 1; ++fRow ) {
         for (int fCol { 0 }; fCol < 2*radius + 1; ++fCol) {
@@ -30,7 +31,7 @@ __global__ void conv2dKernel(
         }
     }
 
-    if (outRow >= 0 && outRow < height && outCol >= 0 && outCol < width)
+    if (outRow < height && outCol < width)
         outArray[outRow * width + outCol] = pValue;
 }
 
@@ -44,6 +45,7 @@ __global__ void conv2dKernelConstMem(
     int outRow { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
     int outCol { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
 
+    // Calculating output elements
     float pValue { 0.0f };
     for (int fRow { 0 }; fRow < 2*radius + 1; ++fRow ) {
         for (int fCol { 0 }; fCol < 2*radius + 1; ++fCol) {
@@ -54,6 +56,90 @@ __global__ void conv2dKernelConstMem(
                 pValue += constFilter[fRow][fCol] * inArray[inRow*width + inCol];
         }
     }
-    if (outRow >= 0 && outRow < height && outCol >= 0 && outCol < width)
+
+    if (outRow < height && outCol < width)
         outArray[outRow * width + outCol] = pValue;
+}
+
+// Kernel using thread organisation with thread blocks of IN_TILE_DIM size
+__global__ void conv2dKernelTiledIn(
+    const float *inArray,
+    float *outArray,
+    int radius,
+    int height,
+    int width
+) {
+    int row { static_cast<int>(blockIdx.y*OUT_TILE_DIM + threadIdx.y - radius) };
+    int col { static_cast<int>(blockIdx.x*OUT_TILE_DIM + threadIdx.x - radius) };
+
+    // Shared tile including halo
+    __shared__ float inArray_s[IN_TILE_DIM][IN_TILE_DIM];
+
+    if (row >= 0 && row < height && col >= 0 && col < width) {
+        inArray_s[threadIdx.y][threadIdx.x] = inArray[row*width + col];
+    } else {
+        inArray_s[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    // Calculating output elements
+    int tileRow { static_cast<int>(threadIdx.y - radius) };
+    int tileCol { static_cast<int>(threadIdx.x - radius) };
+
+    if (row >= 0 && row < height && col >= 0 && col < width) {
+        if (tileCol >= 0 && tileCol < OUT_TILE_DIM && tileRow >= 0 && tileRow < OUT_TILE_DIM) {
+            float pValue { 0.0f };
+            for (int fRow { 0 }; fRow < 2*radius + 1; fRow++) {
+                for (int fCol { 0 }; fCol < 2*radius + 1; fCol++) {
+                    pValue += constFilter[fRow][fCol] * inArray_s[tileRow + fRow][tileCol + fCol];
+                }
+            }
+            outArray[row*width + col] = pValue;
+        }
+    }
+}
+
+// Kernel using thread organisation with thread blocks of OUT_TILE_DIM size
+__global__ void conv2dKernelTiledOut(
+    const float *inArray,
+    float *outArray,
+    int radius,
+    int height,
+    int width
+) {
+    int outRow { static_cast<int>(blockIdx.y*blockDim.y + threadIdx.y) };
+    int outCol { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
+
+    // Shared tile including halo
+    __shared__ float inArray_s[IN_TILE_DIM][IN_TILE_DIM];
+
+    // Cooperative loading IN_TILE_DIMxIN_TILE_DIM
+    for (int i { static_cast<int>(threadIdx.y) }; i < IN_TILE_DIM; i += OUT_TILE_DIM) {
+        for (int j { static_cast<int>(threadIdx.x) }; j < IN_TILE_DIM; j += OUT_TILE_DIM) {
+            int loadRow { static_cast<int>(blockIdx.y*blockDim.y) - radius + i };
+            int loadCol { static_cast<int>(blockIdx.x*blockDim.x) - radius + j };
+
+            if (loadRow >= 0 && loadRow < height && loadCol >= 0 && loadCol < width) {
+                inArray_s[i][j] = inArray[loadRow*width + loadCol];
+            } else {
+                inArray_s[i][j] = 0.0f;
+            }
+        }
+    }
+    __syncthreads();
+
+    // Calculating output elements
+    float pValue { 0.0f };
+    for (int fRow { 0 }; fRow < 2*radius + 1; ++fRow) {
+        for (int fCol {0 }; fCol < 2*radius + 1; ++fCol) {
+            int inRow { static_cast<int>(fRow + threadIdx.y) };
+            int inCol { static_cast<int>(fCol + threadIdx.x) };
+
+            if (inRow >= 0 && inRow < IN_TILE_DIM && inCol >= 0 && inCol < IN_TILE_DIM)
+                pValue += constFilter[fRow][fCol] * inArray_s[inRow][inCol]; 
+        }
+    }
+
+    if (outRow < height && outCol < width)
+        outArray[outRow*width + outCol] = pValue;
 }

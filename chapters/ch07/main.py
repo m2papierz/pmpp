@@ -1,5 +1,6 @@
 import time
 from dataclasses import dataclass
+from typing import Callable, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -18,63 +19,128 @@ class Constants:
     atol = 1e-6
 
 
+def time_torch_reference(
+    input_base: torch.Tensor, filter_base: torch.Tensor, radius: int
+) -> Tuple[torch.Tensor, float]:
+    """Compute the PyTorch conv2d reference and measure time."""
+    start = time.time()
+    out = (
+        F.conv2d(
+            input_base.unsqueeze(0).unsqueeze(0),
+            filter_base.unsqueeze(0).unsqueeze(0),
+            padding=radius,
+        )
+        .squeeze(0)
+        .squeeze(0)
+    )
+    torch.cuda.synchronize()
+    return out, time.time() - start
+
+
+def time_cuda_kernel(
+    kernel_fn: Callable,
+    input_base: torch.Tensor,
+    filter_base: torch.Tensor,
+    radius: int,
+) -> Tuple[torch.Tensor, float]:
+    """
+    Run a CUDA kernel and measure time.
+    IMPORTANT: Clone inputs because kernels may modify arrays in-place.
+    """
+    start = time.time()
+    out = kernel_fn(input_base.clone(), filter_base.clone(), radius)
+    torch.cuda.synchronize()
+    return out, time.time() - start
+
+
+def print_result(label: str, elapsed: float, torch_elapsed: float):
+    print(f"\n{label} time: {elapsed:.4f}s")
+    print(f"Speedup {label.lower()}: {torch_elapsed / elapsed:.2f}x")
+
+
 @torch.inference_mode()
 def main():
     cuda_extension = load_cuda_extension(
-        sources=("bindings.cpp", "functions_torch.cu", "kernels.cu"),
-        verbose=True
+        sources=("bindings.cpp", "functions_torch.cu", "kernels.cu"), verbose=True
     )
 
-    in_cuda = torch.randn(
+    input_base = torch.randn(
         Constants.height, Constants.width, device="cuda", dtype=torch.float32
     )
-    filter_cuda = torch.randn(
+    filter_base = torch.randn(
         Constants.k, Constants.k, device="cuda", dtype=torch.float32
     )
 
-    # Torch reference conv expects NCHW and OIHW for weight
-    in_torch = in_cuda.unsqueeze(0).unsqueeze(0)
-    filter_torch = filter_cuda.unsqueeze(0).unsqueeze(0)
-
-    start_time = time.time()
-    torch_output = (
-        F.conv2d(in_torch, filter_torch, padding=Constants.radius).squeeze(0).squeeze(0)
+    torch_out, torch_time = time_torch_reference(
+        input_base=input_base,
+        filter_base=filter_base,
+        radius=Constants.radius,
     )
-    torch.cuda.synchronize()
-    torch_time = time.time() - start_time
     print(f"PyTorch time: {torch_time:.4f}s")
 
-    start_time = time.time()
-    basic_cuda_output = cuda_extension.conv2d(in_cuda, filter_cuda, Constants.radius)
-    torch.cuda.synchronize()
-    basic_cuda_time = time.time() - start_time
-
+    # Basic conv2d kernel
+    basic_out, basic_t = time_cuda_kernel(
+        kernel_fn=cuda_extension.conv2d,
+        input_base=input_base,
+        filter_base=filter_base,
+        radius=Constants.radius,
+    )
     assert_close(
-        basic_cuda_output,
-        torch_output,
+        basic_out,
+        torch_out,
         rtol=Constants.rtol,
         atol=Constants.atol,
         msg="Basic CUDA output does not match PyTorch reference.",
     )
-    print(f"\nBasic CUDA time: {basic_cuda_time:.4f}s")
-    print(f"Speedup basic: {torch_time / basic_cuda_time:.2f}x")
+    print_result("Basic CUDA", basic_t, torch_time)
 
-    start_time = time.time()
-    const_mem_cuda_output = cuda_extension.conv2dConstMem(
-        in_cuda, filter_cuda, Constants.radius
+    # Constant memory conv2d kernel
+    const_out, const_t = time_cuda_kernel(
+        kernel_fn=cuda_extension.conv2dConstMem,
+        input_base=input_base,
+        filter_base=filter_base,
+        radius=Constants.radius,
     )
-    torch.cuda.synchronize()
-    const_cuda_time = time.time() - start_time
-    
     assert_close(
-        const_mem_cuda_output,
-        torch_output,
+        const_out,
+        torch_out,
         rtol=Constants.rtol,
         atol=Constants.atol,
         msg="Constant-memory CUDA output does not match PyTorch.",
     )
-    print(f"\nConstant-memory CUDA time: {const_cuda_time:.4f}s")
-    print(f"Speedup constant-memory: {torch_time / const_cuda_time:.2f}x")
+    print_result("Constant-memory CUDA", const_t, torch_time)
+
+    # Tiled-in conv2d kernel
+    tiled_in_out, tiled_in_t = time_cuda_kernel(
+        kernel_fn=cuda_extension.conv2dTiledIn,
+        input_base=input_base,
+        filter_base=filter_base,
+        radius=Constants.radius,
+    )
+    assert_close(
+        tiled_in_out,
+        torch_out,
+        rtol=Constants.rtol,
+        atol=Constants.atol,
+        msg="Tiled-in CUDA output does not match PyTorch.",
+    )
+    print_result("Tiled-in CUDA", tiled_in_t, torch_time)
+
+    # Tiled-out conv2d kernel
+    tiled_out_out, tiled_out_t = time_cuda_kernel(
+        kernel_fn=cuda_extension.conv2dTiledOut,
+        input_base=input_base,
+        filter_base=filter_base,
+        radius=Constants.radius,
+    )
+    assert_close(
+        tiled_out_out,
+        torch_out,
+        rtol=Constants.rtol,
+        atol=Constants.atol,
+        msg="Tiled-out CUDA output does not match PyTorch.",
+    )
+    print_result("Tiled-out CUDA", tiled_out_t, torch_time)
 
 
 if __name__ == "__main__":
