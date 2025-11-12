@@ -1,10 +1,10 @@
-#define INIT_CONSTANT_MEMORY
+#define INIT_CONSTANT_MEMORY_2D
 
-#include "kernels.cuh"
+#include "kernels2d.cuh"
 #include <cuda_runtime.h>
 
-cudaError_t uploadConstFilter(const float* host, std::size_t numBytes) {
-    return cudaMemcpyToSymbol(constFilter, host, numBytes);
+cudaError_t uploadConstFilter2D(const float* host, std::size_t numBytes) {
+    return cudaMemcpyToSymbol(constFilter2D, host, numBytes);
 }
 
 __global__ void conv2dKernel(
@@ -53,7 +53,7 @@ __global__ void conv2dKernelConstMem(
             int inCol { outCol - radius + fCol };
 
             if (inRow >= 0 && inRow < height && inCol >= 0 && inCol < width)
-                pValue += constFilter[fRow][fCol] * inArray[inRow*width + inCol];
+                pValue += constFilter2D[fRow][fCol] * inArray[inRow*width + inCol];
         }
     }
 
@@ -69,11 +69,11 @@ __global__ void conv2dKernelTiledIn(
     int height,
     int width
 ) {
-    int row { static_cast<int>(blockIdx.y*OUT_TILE_DIM + threadIdx.y - radius) };
-    int col { static_cast<int>(blockIdx.x*OUT_TILE_DIM + threadIdx.x - radius) };
+    int row { static_cast<int>(blockIdx.y*config2d::OUT_TILE_DIM + threadIdx.y - radius) };
+    int col { static_cast<int>(blockIdx.x*config2d::OUT_TILE_DIM + threadIdx.x - radius) };
 
     // Shared tile including halo
-    __shared__ float inArray_s[IN_TILE_DIM][IN_TILE_DIM];
+    __shared__ float inArray_s[config2d::IN_TILE_DIM][config2d::IN_TILE_DIM];
 
     if (row >= 0 && row < height && col >= 0 && col < width) {
         inArray_s[threadIdx.y][threadIdx.x] = inArray[row*width + col];
@@ -87,11 +87,14 @@ __global__ void conv2dKernelTiledIn(
     int tileCol { static_cast<int>(threadIdx.x - radius) };
 
     if (row >= 0 && row < height && col >= 0 && col < width) {
-        if (tileCol >= 0 && tileCol < OUT_TILE_DIM && tileRow >= 0 && tileRow < OUT_TILE_DIM) {
+        if (
+            tileCol >= 0 && tileCol < config2d::OUT_TILE_DIM &&
+            tileRow >= 0 && tileRow < config2d::OUT_TILE_DIM
+        ) {
             float pValue { 0.0f };
             for (int fRow { 0 }; fRow < 2*radius + 1; fRow++) {
                 for (int fCol { 0 }; fCol < 2*radius + 1; fCol++) {
-                    pValue += constFilter[fRow][fCol] * inArray_s[tileRow + fRow][tileCol + fCol];
+                    pValue += constFilter2D[fRow][fCol] * inArray_s[tileRow + fRow][tileCol + fCol];
                 }
             }
             outArray[row*width + col] = pValue;
@@ -111,11 +114,11 @@ __global__ void conv2dKernelTiledOut(
     int outCol { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
 
     // Shared tile including halo
-    __shared__ float inArray_s[IN_TILE_DIM][IN_TILE_DIM];
+    __shared__ float inArray_s[config2d::IN_TILE_DIM][config2d::IN_TILE_DIM];
 
     // Cooperative loading IN_TILE_DIMxIN_TILE_DIM
-    for (int i { static_cast<int>(threadIdx.y) }; i < IN_TILE_DIM; i += OUT_TILE_DIM) {
-        for (int j { static_cast<int>(threadIdx.x) }; j < IN_TILE_DIM; j += OUT_TILE_DIM) {
+    for (int i { static_cast<int>(threadIdx.y) }; i < config2d::IN_TILE_DIM; i += config2d::OUT_TILE_DIM) {
+        for (int j { static_cast<int>(threadIdx.x) }; j < config2d::IN_TILE_DIM; j += config2d::OUT_TILE_DIM) {
             int loadRow { static_cast<int>(blockIdx.y*blockDim.y) - radius + i };
             int loadCol { static_cast<int>(blockIdx.x*blockDim.x) - radius + j };
 
@@ -135,8 +138,11 @@ __global__ void conv2dKernelTiledOut(
             int inRow { static_cast<int>(fRow + threadIdx.y) };
             int inCol { static_cast<int>(fCol + threadIdx.x) };
 
-            if (inRow >= 0 && inRow < IN_TILE_DIM && inCol >= 0 && inCol < IN_TILE_DIM)
-                pValue += constFilter[fRow][fCol] * inArray_s[inRow][inCol]; 
+            if (
+                inRow >= 0 && inRow < config2d::IN_TILE_DIM &&
+                inCol >= 0 && inCol < config2d::IN_TILE_DIM
+            )
+                pValue += constFilter2D[fRow][fCol] * inArray_s[inRow][inCol]; 
         }
     }
 
@@ -156,7 +162,7 @@ __global__ void conv2dKernelTiledCached(
     int col { static_cast<int>(blockIdx.x*blockDim.x + threadIdx.x) };
 
     // Load tile to the shared memory
-    __shared__ float inArrays_s[TILE_DIM][TILE_DIM];
+    __shared__ float inArrays_s[config2d::TILE_DIM][config2d::TILE_DIM];
     if (row < height && col < width) {
         inArrays_s[threadIdx.y][threadIdx.x] = inArray[row*width + col];
     } else {
@@ -170,8 +176,12 @@ __global__ void conv2dKernelTiledCached(
 
         for (int fRow { 0 }; fRow < 2*radius + 1; fRow++) {
             for (int fCol { 0 }; fCol < 2*radius + 1; fCol++) {
-                if (threadIdx.x - radius + fCol < TILE_DIM && threadIdx.y - radius + fRow < TILE_DIM) {
-                    pValue += constFilter[fRow][fCol] * inArrays_s[threadIdx.y - radius + fRow][threadIdx.x - radius + fCol];
+                if (
+                    threadIdx.x - radius + fCol < config2d::TILE_DIM &&
+                    threadIdx.y - radius + fRow < config2d::TILE_DIM
+                ) {
+                    pValue += constFilter2D[fRow][fCol] * inArrays_s[
+                        threadIdx.y - radius + fRow][threadIdx.x - radius + fCol];
                 } else {
                     if (
                         row - radius + fRow >= 0 &&
@@ -179,7 +189,8 @@ __global__ void conv2dKernelTiledCached(
                         col - radius + fCol >= 0 &&
                         col - radius + fCol < width
                     ) {
-                        pValue += constFilter[fRow][fCol] * inArray[(row - radius + fRow)*width + col - radius + fCol];
+                        pValue += constFilter2D[fRow][fCol] * inArray[
+                            (row - radius + fRow)*width + col - radius + fCol];
                     }
                 }
             }
