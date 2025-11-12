@@ -1,7 +1,9 @@
 #pragma once
+#include <algorithm>  // std::min
 #include <chrono>     // std::chrono::high_resolution_clock
 #include <cmath>      // std::fabs
 #include <cstddef>    // std::size_t
+#include <span>       // std::span
 #include <vector>     // std::vector
 #include <functional>
 
@@ -60,80 +62,73 @@ namespace utils {
         }
     }
 
-    inline bool almostEqual(
-        const float* A,
-        const float* B,
-        std::size_t n,
-        float atol = 1e-6f,
-        float rtol = 1e-6f
-    ) {
-        for (std::size_t i  { 0 }; i < n; ++i) {
-            float diff { std::fabs(A[i] - B[i]) };
-            float tol { atol + rtol * std::fabs(B[i]) };
-            if (diff > tol) { return false; }
-        }
-        return true;
-    }
+    namespace detail {
+        template <typename T>
+        inline bool almostEqualSpan(
+            std::span<const T> A,
+            std::span<const T> B,
+            T atol = T(1e-6),
+            T rtol = T(1e-6)
+        ) {
+            static_assert(
+                std::is_floating_point_v<T>,
+                "almostEqualSpan requires a floaring-point type"
+            );
 
+            if (A.size() != B.size()) {
+                return false;
+            }
+
+            const std::size_t n { A.size() };
+            for (std::size_t i { 0 }; i < n; ++i) {
+                T diff { std::fabs(A[i] - B[i]) };
+                T tol { atol + rtol * std::fabs(B[i]) };
+                if (diff > tol) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    } // namespace detail
+
+    // 1D vectors
     inline bool almostEqual(
         const std::vector<float>& A,
         const std::vector<float>& B,
         float atol = 1e-6f,
         float rtol = 1e-6f
     ) {
-        if (A.size() != B.size()) { return false; }
-        return almostEqual(A.data(), B.data(), A.size(), atol, rtol);
+        return detail::almostEqualSpan<float>(
+            std::span<const float>(A),
+            std::span<const float>(B),
+            atol,
+            rtol
+        );
     }
 
+    // 2D vectors
     inline bool almostEqual(
-        const float* A,
-        const float* B,
+        const std::vector<float>& A,
+        const std::vector<float>& B,
         std::size_t rows,
         std::size_t cols,
         float atol = 1e-6f,
         float rtol = 1e-6f
     ) {
         const std::size_t n { rows * cols };
-        for (std::size_t i { 0 }; i < n; ++i) {
-            float diff { std::fabs(A[i] - B[i]) };
-            float tol { atol + rtol * std::fabs(B[i]) };
-            if (diff > tol) { return false; }
-        }
-        return true;
-    }
-
-    inline bool almostEqual(
-        const std::vector<float>& A,
-        const std::vector<float>& B,
-        std::size_t rows,
-        std::size_t cols,
-        float atol = 1e-6f,
-        float rtol = 1e-6f
-    ) {
-        if (A.size() != B.size() || A.size() != rows * cols) {
+        if (A.size() != B.size() || A.size() != n) {
             return false;
         }
-        return almostEqual(A.data(), B.data(), rows, cols, atol, rtol);
+
+        return detail::almostEqualSpan<float>(
+            std::span<const float>(A),
+            std::span<const float>(B),
+            atol,
+            rtol
+        );
     }
 
-    inline bool almostEqual(
-        const float* A,
-        const float* B,
-        std::size_t depth,
-        std::size_t height,
-        std::size_t width,
-        float atol = 1e-6f,
-        float rtol = 1e-6f
-    ) {
-        const std::size_t n { depth * height * width };
-        for (std::size_t i {0 }; i < n; ++i) {
-            float diff { std::fabs(A[i] - B[i]) };
-            float tol { atol + rtol * std::fabs(B[i]) };
-            if (diff > tol) { return false; }
-        }
-        return true;
-    }
-
+    // 3D vectors
     inline bool almostEqual(
         const std::vector<float>& A,
         const std::vector<float>& B,
@@ -144,7 +139,15 @@ namespace utils {
         float rtol = 1e-6f
     ) {
         const std::size_t n { depth * height * width };
-        if (A.size() != B.size() || A.size() != n) { return false; }
-        return almostEqual(A.data(), B.data(), depth, height, width, atol, rtol);
+        if (A.size() != B.size() || A.size() != n) {
+            return false;
+        }
+
+        return detail::almostEqualSpan<float>(
+            std::span<const float>(A),
+            std::span<const float>(B),
+            atol,
+            rtol
+        );
     }
 } // namespace utils
