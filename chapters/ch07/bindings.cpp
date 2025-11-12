@@ -1,11 +1,17 @@
 #include <torch/extension.h>
 #include <pybind11/pybind11.h>
 
+// 2D kernels
 torch::Tensor conv2d(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
 torch::Tensor conv2dConstMem(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
 torch::Tensor conv2dTiledIn(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
 torch::Tensor conv2dTiledOut(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
 torch::Tensor conv2dTiledCached(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
+
+// 3D kernels
+torch::Tensor conv3d(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
+torch::Tensor conv3dConstMem(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
+torch::Tensor conv3dTiled(const torch::Tensor& inArray, const torch::Tensor& filter, int radius);
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def(

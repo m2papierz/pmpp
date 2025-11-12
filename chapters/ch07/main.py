@@ -26,9 +26,10 @@ class Constants:
 
 
 def time_torch_reference(
-    input_base: torch.Tensor, filter_base: torch.Tensor, radius: int
+    input_base: torch.Tensor,
+    filter_base: torch.Tensor,
+    radius: int,
 ) -> Tuple[torch.Tensor, float]:
-    """Compute the PyTorch conv2d reference and measure time."""
     start = time.time()
     out = (
         F.conv2d(
@@ -66,16 +67,25 @@ def run_and_check(
     radius: int,
     torch_out: torch.Tensor,
     torch_time: float,
+    rtol: float,
+    atol: float,
 ):
     """Time one kernel, check correctness, and print results."""
-    out, elapsed = time_cuda_kernel(kernel_fn, input_base, filter_base, radius)
+    out, elapsed = time_cuda_kernel(
+        kernel_fn=kernel_fn,
+        input_base=input_base.contiguous(),
+        filter_base=filter_base.contiguous(),
+        radius=radius,
+    )
+
     assert_close(
         out,
         torch_out,
-        rtol=Constants.rtol,
-        atol=Constants.atol,
+        rtol=rtol,
+        atol=atol,
         msg=f"{label} output does not match PyTorch reference.",
     )
+
     print(f"\n{label} time: {elapsed:.4f}s")
     print(f"Speedup {label.lower()}: {torch_time / elapsed:.2f}x")
 
@@ -83,44 +93,49 @@ def run_and_check(
 @torch.inference_mode()
 def main():
     cuda_extension = load_cuda_extension(
-        sources=("bindings.cpp", "functions_torch.cu", "kernels.cu"), verbose=True
+        sources=(
+            "bindings.cpp",
+            "functions_torch.cu",
+            "kernels/kernels2d.cu",
+            "kernels/kernels3d.cu",
+        ),
+        verbose=True,
     )
 
-    input_base = torch.randn(
-        Constants.height, Constants.width, device="cuda", dtype=torch.float32
-    )
-    filter_base = torch.randn(
-        Constants.k, Constants.k, device="cuda", dtype=torch.float32
-    )
+    # ---------------- 2D ----------------
+    input2d = torch.randn(Constants.height, Constants.width, device="cuda", dtype=torch.float32)
+    filt2d = torch.randn(Constants.k, Constants.k, device="cuda", dtype=torch.float32)
 
     torch_out, torch_time = time_torch_reference(
-        input_base=input_base,
-        filter_base=filter_base,
+        input_base=input2d,
+        filter_base=filt2d,
         radius=Constants.radius,
     )
-    print(f"PyTorch time: {torch_time:.4f}s")
+    print(f"PyTorch 2D time: {torch_time:.4f}s")
 
     # Kernels to run
-    cases: List[KernelSpec] = [
-        KernelSpec("Basic CUDA", "conv2d"),
-        KernelSpec("Constant-memory CUDA", "conv2dConstMem"),
-        KernelSpec("Tiled-in CUDA", "conv2dTiledIn"),
-        KernelSpec("Tiled-out CUDA", "conv2dTiledOut"),
-        KernelSpec("Tiled-cached CUDA", "conv2dTiledCached"),
+    cases2d: List[KernelSpec] = [
+        KernelSpec("Basic CUDA 2D", "conv2d"),
+        KernelSpec("Constant-memory CUDA 2D", "conv2dConstMem"),
+        KernelSpec("Tiled-in CUDA 2D", "conv2dTiledIn"),
+        KernelSpec("Tiled-out CUDA 2D", "conv2dTiledOut"),
+        KernelSpec("Tiled-cached CUDA 2D", "conv2dTiledCached"),
     ]
 
     # Run all kernels with the same procedure
-    for spec in cases:
-        kernel_fn = getattr(cuda_extension, spec.attr_name)
+    for spec in cases2d:
         run_and_check(
             label=spec.label,
-            kernel_fn=kernel_fn,
-            input_base=input_base,
-            filter_base=filter_base,
+            kernel_fn=getattr(cuda_extension, spec.attr_name),
+            input_base=input2d,
+            filter_base=filt2d,
             radius=Constants.radius,
             torch_out=torch_out,
             torch_time=torch_time,
+            rtol=Constants.rtol,
+            atol=Constants.atol,
         )
+
 
 if __name__ == "__main__":
     main()
