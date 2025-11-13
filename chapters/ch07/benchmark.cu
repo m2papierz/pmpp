@@ -31,7 +31,7 @@ void run2DKernels() {
     for (auto& w : filter) w = static_cast<float>(rand()) / RAND_MAX;
 
     // CPU reference
-    std::vector<float> outCPU(height * width);;
+    std::vector<float> outCPU(height * width);
     double secondsCPU {
         utils::executeAndTimeFunction([&]{
             conv2dCPU(
