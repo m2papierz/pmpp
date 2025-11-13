@@ -17,22 +17,35 @@
 
 namespace utils {
     template <typename F>
-    float cudaExecuteAndTimeFunction(F&& func) {
-      cudaEvent_t start {}, stop {};
-      CUDA_CHECK(cudaEventCreate(&start));
-      CUDA_CHECK(cudaEventCreate(&stop));
+    float cudaExecuteAndTimeFunction(
+        F&& func,
+        int warmupIters = 5,
+        int repeatIters = 5
+    ) {
+        // Warmup
+        for (int i { 0 }; i < warmupIters; ++i) {
+            func();
+        }
+        CUDA_CHECK(cudaDeviceSynchronize()); // ensure warmup work is done
 
-      CUDA_CHECK(cudaEventRecord(start, 0));
-      func();
-      CUDA_CHECK(cudaEventRecord(stop, 0));
-      CUDA_CHECK(cudaEventSynchronize(stop));
+        cudaEvent_t start {}, stop {};
+        CUDA_CHECK(cudaEventCreate(&start));
+        CUDA_CHECK(cudaEventCreate(&stop));
 
-      float diff { 0.0 };
-      CUDA_CHECK(cudaEventElapsedTime(&diff, start, stop));
+        CUDA_CHECK(cudaEventRecord(start, 0));
+            for (int i { 0 }; i < repeatIters; ++i) {
+            func();
+        }
+        CUDA_CHECK(cudaEventRecord(stop, 0));
+        CUDA_CHECK(cudaEventSynchronize(stop));
 
-      CUDA_CHECK(cudaEventDestroy(start));
-      CUDA_CHECK(cudaEventDestroy(stop));
+        float diff { 0.0 };
+        CUDA_CHECK(cudaEventElapsedTime(&diff, start, stop));
 
-      return diff * 1e-3f;
+        CUDA_CHECK(cudaEventDestroy(start));
+        CUDA_CHECK(cudaEventDestroy(stop));
+
+        // Return average time per call in seconds
+        return (diff * 1e-3f) / repeatIters;
     }
 } // namespace utils

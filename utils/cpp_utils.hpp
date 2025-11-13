@@ -14,12 +14,25 @@ namespace utils {
     }
 
     template <typename F>
-    double executeAndTimeFunction(F&& func) {
+    double executeAndTimeFunction(
+        F&& func,
+        int warmupIters = 5,
+        int repeatIters = 5
+    ) {
+        // Warmup
+        for (int i { 0 }; i < warmupIters; ++i) {
+            func();
+        }
+
         auto start { std::chrono::high_resolution_clock::now() };
-        func();
+        for (int i { 0 }; i < repeatIters; ++i) {
+            func();
+        }
         auto end { std::chrono::high_resolution_clock::now() };
         std::chrono::duration<double> diff { end - start };
-        return diff.count();
+
+        // Return average time per call in seconds
+        return diff.count() / repeatIters;
     }
 
     inline void matMulCPU(
