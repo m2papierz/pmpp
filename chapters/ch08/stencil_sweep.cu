@@ -321,7 +321,7 @@ void stencilRegisterTiling(
     // Copy from device to host
     CUDA_CHECK(cudaMemcpy(out, out_d, tensorSize, cudaMemcpyDeviceToHost));
 
-    // Free devuce memory
+    // Free device  memory
     CUDA_CHECK(cudaFree(in_d));
     CUDA_CHECK(cudaFree(out_d));
 }
