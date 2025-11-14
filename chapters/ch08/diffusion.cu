@@ -124,9 +124,8 @@ __global__ void allenCahnStepKerne3D(
 };
 
 extern "C"
-void runAllenCahn3D(
+void allenCahnStep(
     float* __restrict__ u,
-    int nSteps,
     int dim,
     float dh,
     float dt,
@@ -159,16 +158,13 @@ void runAllenCahn3D(
     );
 
     float inv_h2 { 1.0f / (dh*dh) };
-    for (int step { 0 }; step < nSteps; ++step) {
-        laplacianKernel3D<<<gridSizeLap, blockSizeLap>>>(d_u, d_lap, dim, inv_h2);
-        CUDA_CHECK(cudaGetLastError());
+    laplacianKernel3D<<<gridSizeLap, blockSizeLap>>>(d_u, d_lap, dim, inv_h2);
+    CUDA_CHECK(cudaGetLastError());
 
-        allenCahnStepKerne3D<<<gridSizeStep, blockSizeStep>>>(d_u, d_lap, d_u_next, dim, dt, eps);
-        CUDA_CHECK(cudaGetLastError());
+    allenCahnStepKerne3D<<<gridSizeStep, blockSizeStep>>>(d_u, d_lap, d_u_next, dim, dt, eps);
+    CUDA_CHECK(cudaGetLastError());
 
-        std::swap(d_u, d_u_next);
-    }
-    CUDA_CHECK(cudaDeviceSynchronize());
+    std::swap(d_u, d_u_next);
 
     // Copy from device to host
     CUDA_CHECK(cudaMemcpy(u, d_u, tensorSize, cudaMemcpyDeviceToHost));
@@ -177,4 +173,14 @@ void runAllenCahn3D(
     CUDA_CHECK(cudaFree(d_u));
     CUDA_CHECK(cudaFree(d_lap));
     CUDA_CHECK(cudaFree(d_u_next));
+}
+
+extern "C"
+void cleanupCuda() {
+    // Best-effort device cleanup
+    cudaError_t err = cudaDeviceReset();
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA cleanup error: " << cudaGetErrorString(err)
+                  << " (" << __FILE__ << ":" << __LINE__ << ")\n";
+    }
 }
