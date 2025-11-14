@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Callable, Tuple, List
+from typing import Callable, List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -11,7 +11,7 @@ from utils.py_utils import load_cuda_extension
 
 @dataclass
 class KernelSpec:
-    label: str      # Pretty label for printing
+    label: str  # Pretty label for printing
     attr_name: str  # Attribute name on the loaded CUDA extension
 
 
@@ -59,6 +59,7 @@ def time_cuda_kernel(
     torch.cuda.synchronize()
     return out, time.time() - start
 
+
 def run_and_check(
     label: str,
     kernel_fn: Callable,
@@ -102,9 +103,18 @@ def main():
         verbose=True,
     )
 
-    # ---------------- 2D ----------------
-    input2d = torch.randn(Constants.height, Constants.width, device="cuda", dtype=torch.float32)
-    filt2d = torch.randn(Constants.k, Constants.k, device="cuda", dtype=torch.float32)
+    input2d = torch.randn(
+        Constants.height,
+        Constants.width,
+        device="cuda",
+        dtype=torch.float32,
+    )
+    filt2d = torch.randn(
+        Constants.k,
+        Constants.k,
+        device="cuda",
+        dtype=torch.float32,
+    )
 
     torch_out, torch_time = time_torch_reference(
         input_base=input2d,
