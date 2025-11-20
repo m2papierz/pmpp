@@ -29,7 +29,7 @@ void histogramNaive(
 
     unsigned int* histo_d { nullptr };
     CUDA_CHECK(cudaMalloc(&histo_d, sizeOut));
-    CUDA_CHECK(cudaMemcpy(histo_d, histo, sizeOut, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut));
 
     histogramKernel<<<utils::cdiv(length, BLOCK_SIZE), BLOCK_SIZE>>>(data_d, length, histo_d);
 
@@ -60,6 +60,7 @@ void histogramPrivate(
 
     unsigned int* histo_d { nullptr };
     CUDA_CHECK(cudaMalloc(&histo_d, sizeOut_d));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut_d));
 
     histogramKernelPrivate<<<gridDim, blockDim>>>(data_d, length, histo_d);
 
@@ -87,9 +88,90 @@ void histogramSharedMem(
 
     unsigned int* histo_d { nullptr };
     CUDA_CHECK(cudaMalloc(&histo_d, sizeOut));
-    CUDA_CHECK(cudaMemcpy(histo_d, histo, sizeOut, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut));
 
     histogramKernelSharedMem<<<utils::cdiv(length, BLOCK_SIZE), BLOCK_SIZE>>>(data_d, length, histo_d);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(histo, histo_d, sizeOut, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(data_d));
+    CUDA_CHECK(cudaFree(histo_d));
+}
+
+void histogramContiguousPart(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    std::size_t sizeData { static_cast<std::size_t>(length*sizeof(char)) };
+    std::size_t sizeOut { static_cast<std::size_t>(NUM_BINS*sizeof(unsigned int)) };
+
+    char* data_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&data_d, sizeData));
+    CUDA_CHECK(cudaMemcpy(data_d, data, sizeData, cudaMemcpyHostToDevice));
+
+    unsigned int* histo_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&histo_d, sizeOut));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut));
+
+    histogramKernelContiguousPart<<<utils::cdiv(length, BLOCK_SIZE*CFACTOR), BLOCK_SIZE>>>(data_d, length, histo_d);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(histo, histo_d, sizeOut, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(data_d));
+    CUDA_CHECK(cudaFree(histo_d));
+}
+
+void histogramContiguousInter(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    std::size_t sizeData { static_cast<std::size_t>(length*sizeof(char)) };
+    std::size_t sizeOut { static_cast<std::size_t>(NUM_BINS*sizeof(unsigned int)) };
+
+    char* data_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&data_d, sizeData));
+    CUDA_CHECK(cudaMemcpy(data_d, data, sizeData, cudaMemcpyHostToDevice));
+
+    unsigned int* histo_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&histo_d, sizeOut));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut));
+
+    histogramKernelContiguousInter<<<utils::cdiv(length, BLOCK_SIZE), BLOCK_SIZE>>>(data_d, length, histo_d);
+
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    CUDA_CHECK(cudaMemcpy(histo, histo_d, sizeOut, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(data_d));
+    CUDA_CHECK(cudaFree(histo_d));
+}
+
+void histogramAggregation(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    std::size_t sizeData { static_cast<std::size_t>(length*sizeof(char)) };
+    std::size_t sizeOut { static_cast<std::size_t>(NUM_BINS*sizeof(unsigned int)) };
+
+    char* data_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&data_d, sizeData));
+    CUDA_CHECK(cudaMemcpy(data_d, data, sizeData, cudaMemcpyHostToDevice));
+
+    unsigned int* histo_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&histo_d, sizeOut));
+    CUDA_CHECK(cudaMemset(histo_d, 0, sizeOut));
+
+    histogramKernelAggregation<<<utils::cdiv(length, BLOCK_SIZE), BLOCK_SIZE>>>(data_d, length, histo_d);
 
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());

@@ -70,3 +70,111 @@ __global__ void histogramKernelSharedMem(
         }
     }
 }
+
+__global__ void histogramKernelContiguousPart(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    // Initialize privatized bins
+    __shared__ unsigned int histo_s[NUM_BINS];
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        histo_s[bin] = 0u;
+    }
+    __syncthreads();
+
+    // Histogram computation
+    unsigned int tid { blockIdx.x * blockDim.x + threadIdx.x };
+    for (unsigned int i { tid*CFACTOR}; i <min((tid + 1)*CFACTOR, length); ++i) {
+        int alphabetPosition { data[i] - 'a' };
+        if (alphabetPosition >= 0 && alphabetPosition < 26) {
+            atomicAdd(&(histo_s[alphabetPosition/BIN_SIZE]), 1);
+        }
+    }
+    __syncthreads();
+
+    // Commit ot global memory
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        unsigned int binValue { histo_s[bin] };
+        if (binValue > 0) {
+            atomicAdd(&(histo[bin]), binValue);
+        }
+    }
+}
+
+__global__ void histogramKernelContiguousInter(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    // Initialize privatized bins
+    __shared__ unsigned int histo_s[NUM_BINS];
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        histo_s[bin] = 0u;
+    }
+    __syncthreads();
+
+    // Histogram computation
+    unsigned int tid { blockIdx.x * blockDim.x + threadIdx.x };
+    for (unsigned int i { tid }; i < length; i += blockDim.x*gridDim.x) {
+        int alphabetPosition { data[i] - 'a' };
+        if (alphabetPosition >= 0 && alphabetPosition < 26) {
+            atomicAdd(&(histo_s[alphabetPosition/BIN_SIZE]), 1);
+        }
+    }
+    __syncthreads();
+
+    // Commit to global memory
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        unsigned int binValue { histo_s[bin] };
+        if (binValue > 0) {
+            atomicAdd(&(histo[bin]), binValue);
+        }
+    }
+}
+
+__global__ void histogramKernelAggregation(
+    const char* data,
+    unsigned int length,
+    unsigned int* histo
+) {
+    // Initialize privatized bins
+    __shared__ unsigned int histo_s[NUM_BINS];
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        histo_s[bin] = 0u;
+    }
+    __syncthreads();
+
+    // Histogram computation
+    unsigned int accumulator { 0 };
+    int prevBinIdx = -1;
+    unsigned int tid { blockIdx.x * blockDim.x + threadIdx.x };
+    for (unsigned int i { tid }; i < length; i += blockDim.x*gridDim.x) {
+        int alphabetPosition { data[i] - 'a' };
+        if (alphabetPosition >= 0 && alphabetPosition < 26) {
+            int bin { alphabetPosition/BIN_SIZE };
+            if (bin == prevBinIdx) {
+                ++accumulator;
+            } else {
+                if (accumulator > 0) {
+                    atomicAdd(&(histo_s[prevBinIdx]), accumulator);
+                }
+                accumulator = 1;
+                prevBinIdx = bin;
+            }
+        }
+    }
+
+    if (accumulator > 0) {
+        atomicAdd(&(histo_s[prevBinIdx]), accumulator);
+    }
+    __syncthreads();
+
+    // Commit to global memory
+    for (unsigned int bin { threadIdx.x }; bin < NUM_BINS; bin += blockDim.x) {
+        unsigned int binValue { histo_s[bin] };
+        if (binValue > 0) {
+            atomicAdd(&(histo[bin]), binValue);
+        }
+    }
+}
