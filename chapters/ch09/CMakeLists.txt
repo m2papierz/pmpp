@@ -1,4 +1,4 @@
-# Chapter 7 targets
+# Chapter 9 targets
 add_executable(hist_benchmark
     benchmark.cu
     kernels.cu
