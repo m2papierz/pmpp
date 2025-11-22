@@ -106,6 +106,26 @@ namespace utils {
         }
     } // namespace detail
 
+    // scalars
+    template <typename T>
+    inline bool almostEqual(
+        T a,
+        T b,
+        double atol = 1e-6,
+        double rtol = 1e-6
+    ) {
+        static_assert(
+            std::is_floating_point_v<T>,
+            "almostEqualScalar requires a floating-point type"
+        );
+
+        double da = static_cast<double>(a);
+        double db = static_cast<double>(b);
+        double diff = std::fabs(da - db);
+        double tol  = atol + rtol * std::fabs(db);
+        return diff <= tol;
+    }
+
     // 1D vectors
     template <typename T>
     inline bool almostEqual(
