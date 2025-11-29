@@ -162,3 +162,155 @@ __global__ void coarsenedThreePhaseKernel(const float* x, float* y, unsigned int
         }
     }
 }
+
+// Pahse 1 kernel - block-level scan
+__global__ void hierarchicalKernelPhase1(float* x, float* y, float* s, unsigned int n) {
+    unsigned int idx { blockIdx.x*blockDim.x + threadIdx.x };
+
+    extern __shared__ float buffer[];
+    if (idx < n) {
+        buffer[threadIdx.x] = x[idx];
+    } else {
+        buffer[threadIdx.x] = 0.0f;
+    }
+
+    for (unsigned int stride { 1 }; stride < blockDim.x; stride *= 2) {
+        float temp{};
+        __syncthreads();
+        if (threadIdx.x >= stride) {
+            temp = buffer[threadIdx.x] + buffer[threadIdx.x - stride];
+        }
+        __syncthreads();
+        if (threadIdx.x >= stride) {
+            buffer[threadIdx.x] = temp;
+        }
+    }
+
+    if (idx < n) {
+        y[idx] = buffer[threadIdx.x];
+    }
+
+    if (threadIdx.x == blockDim.x - 1) {
+        s[blockIdx.x] = buffer[threadIdx.x];
+    }
+}
+
+// Phase 2 kernel - scan on block sums
+__global__ void hierarchicalKernelPhase2(float* s, unsigned int n) {
+    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+    extern __shared__ float buffer[];
+    if (idx < n) {
+        buffer[threadIdx.x] = s[idx];
+    } else {
+        buffer[threadIdx.x] = 0.0f;
+    }
+    __syncthreads();
+
+    for (unsigned int stride { 1 }; stride < blockDim.x; stride *= 2) {
+        float temp { buffer[threadIdx.x] };
+        __syncthreads();
+
+        if (threadIdx.x >= stride) {
+            temp += buffer[threadIdx.x - stride];
+        }
+        __syncthreads();
+
+        buffer[threadIdx.x] = temp;
+    }
+
+    if (idx < n) {
+        s[idx] = buffer[threadIdx.x];
+    }
+}
+
+// Phase 3 kernel - final block sums distribution
+__global__ void hierarchicalKernelPhase3(float* y, float* s, unsigned int n) {
+    unsigned int idx { blockIdx.x * blockDim.x + threadIdx.x };
+
+    if (idx < n && blockIdx.x > 0) {
+        y[idx] += s[blockIdx.x - 1];
+    }
+}
+
+// Single-kernel domino-style scan implementation
+__global__ void hierarchicalDominoKernel(
+    float* x,
+    float* y,
+    float* scanValue,
+    int* flags,
+    int* blockCounter,
+    unsigned int n
+) {
+    extern __shared__ float buffer[];
+    __shared__ unsigned int bid_s;
+    __shared__ float previous_sum;
+
+    // Dynamic block index assignment for deadlock prevention
+    if (threadIdx.x == 0) {
+        bid_s = atomicAdd(blockCounter, 1);
+    }
+    __syncthreads();
+
+    const unsigned int bid { bid_s };
+    const unsigned int gid { bid * blockDim.x + threadIdx.x };
+
+    // Phase 1 - local block scan
+    if (gid < n) {
+        buffer[threadIdx.x] = x[gid];
+    } else {
+        buffer[threadIdx.x] = 0.0f;
+    }
+
+    for (unsigned int stride { 1 }; stride < blockDim.x; stride *= 2) {
+        __syncthreads();
+        float temp { buffer[threadIdx.x] };
+        if (threadIdx.x >= stride) {
+            temp += buffer[threadIdx.x - stride];
+        }
+        __syncthreads();
+        buffer[threadIdx.x] = temp;
+    }
+
+    if (gid < n) {
+        y[gid] = buffer[threadIdx.x];
+    }
+
+    // Get local sum for the block
+    const float local_sum { buffer[blockDim.x - 1] };
+
+    // Phase 2 - blocks sum propagation
+    if (threadIdx.x == 0) {
+        if (bid > 0) {
+            // Wait for previous flag
+            while (atomicAdd(&flags[bid], 0) == 0) { }
+
+            // Read previous partial sum
+            previous_sum = scanValue[bid];
+
+            // Propagate partial sum
+            scanValue[bid + 1] = previous_sum + local_sum;
+
+            // Memory fance
+            __threadfence();
+
+            // Set flag
+            atomicAdd(&flags[bid + 1], 1);
+        } else {
+            // Propagate first block sum
+            scanValue[1] = local_sum;
+
+            // Memory fance
+            __threadfence();
+
+            // Set flag
+            atomicAdd(&flags[1], 1);
+        }
+    }
+    __syncthreads();
+
+    // Phase 3 - previous block sum goes to the local results
+    if (bid > 0 && gid < n) {
+        y[gid] += previous_sum;
+    }
+}

@@ -3,7 +3,7 @@
 
 namespace {
     constexpr int lengthSimple { 1024 };
-    // constexpr int lengthSegmented { 10000000 };
+    constexpr int lengthHierarchical { 1048576 };
     constexpr int benchWarmupIters { 5 };
     constexpr int benchRepeatIters { 5 };
 }
@@ -49,26 +49,26 @@ void benchmarkSimple() {
     runAndCheck(coarsenedThreePhase, "Coarsened Three-phase Kernel", inputData, lengthSimple, outCPU);
 }
 
-// void benchmarkSegmented() {
-//     float outCPU { 0.0f };
-//     static std::vector<float> inputData(length);
-//     for (auto& x : inputData) x = static_cast<float>(rand()) / RAND_MAX;
+void benchmarkHierarchical() {
+    std::vector<float> outCPU(lengthHierarchical);
+    std::vector<float> inputData(lengthHierarchical);
+    for (auto& x : inputData) x = static_cast<float>(rand()) / RAND_MAX;
 
-//     double sequentialTime {
-//         utils::executeAndTimeFunction([&]{
-//             reductionSumSerial(inputData.data(), &outCPU, length);
-//         }, 0, 1)
-//     };
-//     std::cout << "\nCPU with " << length << " elements elapsed time: " << sequentialTime << "s\n";
+    double sequentialTime {
+        utils::executeAndTimeFunction([&]{
+            scanSequential(inputData.data(), outCPU.data(), lengthHierarchical);
+        }, benchWarmupIters, benchRepeatIters)
+    };
+    std::cout << "\nCPU with " << lengthHierarchical << " elements elapsed time: " << sequentialTime << "s\n";
 
-//     runAndCheck(reductionSegmented, "Segmented Kernel", inputData, length, outCPU);
-//     runAndCheck(reductionCoarsed, "Segmented Coarsed Kernel", inputData, length, outCPU);
-// }
+    runAndCheck(hierarchicalScan, "Hierarchical Kernel", inputData, lengthHierarchical, outCPU);
+    runAndCheck(hierarchicalDominoScan, "Hierarchical Domino Kernel", inputData, lengthHierarchical, outCPU);
+}
 
 
 int main() {
     benchmarkSimple();
-    // benchmarkSegmented();
+    benchmarkHierarchical();
 
     return 0;
 }
