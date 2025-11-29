@@ -4,6 +4,8 @@
 namespace {
     constexpr int lengthSimple { 2048 };
     constexpr int length { 10000000 };
+    constexpr int benchWarmupIters { 5 };
+    constexpr int benchRepeatIters { 5 };
 }
 
 template <typename GpuFunc>
@@ -21,7 +23,7 @@ auto runAndCheck(
     float parallelTime {
         utils::cudaExecuteAndTimeFunction([&]{
             gpuFunc(inCopy.data(), &outGPU, length);
-        }, 0, 1)
+        }, benchWarmupIters, benchRepeatIters)
     };
     std::cout << name << " elapsed time: " << parallelTime << "s\n";
     if (!utils::almostEqual(outCPU, outGPU, 1e-3, 1e-3)) {
@@ -37,7 +39,7 @@ void benchmarkSumSimple() {
     double sequentialTime {
         utils::executeAndTimeFunction([&]{
             reductionSumSerial(inputData.data(), &outCPU, lengthSimple);
-        }, 0, 1)
+        }, benchWarmupIters, benchRepeatIters)
     };
     std::cout << "\nCPU with " << lengthSimple << " elements elapsed time: " << sequentialTime << "s\n";
 
@@ -54,7 +56,7 @@ void benchmarkSumSegmented() {
     double sequentialTime {
         utils::executeAndTimeFunction([&]{
             reductionSumSerial(inputData.data(), &outCPU, length);
-        }, 0, 1)
+        }, benchWarmupIters, benchRepeatIters)
     };
     std::cout << "\nCPU with " << length << " elements elapsed time: " << sequentialTime << "s\n";
 
