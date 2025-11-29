@@ -1,6 +1,12 @@
 #include "kernels.cuh"
 #include "scan.cuh"
 #include "utils.hpp"
+
+#include <thrust/device_vector.h>
+#include <thrust/scan.h>
+#include <thrust/copy.h>
+#include <thrust/execution_policy.h>
+
 #include <assert.h>
 
 void scanSequential(const float* x, float* y, unsigned int n) {
@@ -8,6 +14,26 @@ void scanSequential(const float* x, float* y, unsigned int n) {
     for(int i { 1 }; i < n; ++i) {
         y[i] = y[i - 1] + x[i];
     }
+}
+
+void thrustScan(const float* x, float* y, unsigned int n) {
+    // Allocate device memory
+    thrust::device_vector<float> d_in(n);
+    thrust::device_vector<float> d_out(n);
+
+    // Copy input from host -> device
+    thrust::copy(x, x + n, d_in.begin());
+
+    // Inclusive scan on device
+    thrust::inclusive_scan(
+        thrust::device,
+        d_in.begin(),
+        d_in.end(),
+        d_out.begin()
+    );
+
+    // Copy result back to host
+    thrust::copy(d_out.begin(), d_out.end(), y);
 }
 
 void koggeStone(const float* x, float* y, unsigned int n) {

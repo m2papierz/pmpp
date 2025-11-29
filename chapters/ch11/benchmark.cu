@@ -47,6 +47,7 @@ void benchmarkSimple() {
     runAndCheck(koggeStoneDoubleBuffer, "Kogge-Stone 2-buffers Kernel", inputData, lengthSimple, outCPU);
     runAndCheck(brentKung, "Brent-Kung Kernel", inputData, lengthSimple, outCPU);
     runAndCheck(coarsenedThreePhase, "Coarsened Three-phase Kernel", inputData, lengthSimple, outCPU);
+    runAndCheck(thrustScan, "Thrust Scan", inputData, lengthSimple, outCPU);
 }
 
 void benchmarkHierarchical() {
@@ -63,6 +64,7 @@ void benchmarkHierarchical() {
 
     runAndCheck(hierarchicalScan, "Hierarchical Kernel", inputData, lengthHierarchical, outCPU);
     runAndCheck(hierarchicalDominoScan, "Hierarchical Domino Kernel", inputData, lengthHierarchical, outCPU);
+    runAndCheck(thrustScan, "Thrust Scan", inputData, lengthHierarchical, outCPU);
 }
 
 
