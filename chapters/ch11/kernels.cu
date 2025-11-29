@@ -101,3 +101,64 @@ __global__ void brentKungKernel(const float* x, float* y, unsigned int n) {
         y[i + blockDim.x] = xy[threadIdx.x + blockDim.x];
     }
 }
+
+__global__ void coarsenedThreePhaseKernel(const float* x, float* y, unsigned int n) {
+    extern __shared__ float shared_mem[];
+    float* buffer = shared_mem;
+    float* last_elements = &shared_mem[n];
+
+    // Phase 1 - coarsened loading to the shared memory
+    for (unsigned int i { 0 }; i < COARSE_FACTOR; ++i) {
+        unsigned int idx { threadIdx.x*COARSE_FACTOR + i };
+        if (idx < n) {
+            buffer[idx] = x[idx]; 
+        }
+    }
+    __syncthreads();
+
+    // Coarsened local scan
+    for (unsigned int i { 1 }; i < COARSE_FACTOR; ++i) {
+        unsigned int idx { threadIdx.x*COARSE_FACTOR + i };
+        if (idx < n) {
+            buffer[idx] += buffer[idx - 1];
+        }
+    }
+    __syncthreads();
+
+    // Load positions of last elements in the section
+    if (threadIdx.x < n / COARSE_FACTOR) {
+        unsigned int end_idx { (threadIdx.x + 1)*COARSE_FACTOR - 1 };
+        if (end_idx < n) {
+            last_elements[threadIdx.x] = buffer[end_idx];
+        }
+    }
+
+    // Phase 2 - apply Kogge-Stone scan on the ends of each section
+    unsigned int num_sections { (n + COARSE_FACTOR - 1) / COARSE_FACTOR };
+
+    for (int stride { 1 }; stride < num_sections; stride *= 2) {
+        __syncthreads();
+
+        float temp{};
+        if (threadIdx.x >= stride && threadIdx.x < num_sections) {
+            temp = last_elements[threadIdx.x] + last_elements[threadIdx.x - stride];
+        }
+        __syncthreads();
+        if (threadIdx.x >= stride && threadIdx.x < num_sections) {
+            last_elements[threadIdx.x] = temp;
+        }
+    }
+    __syncthreads();
+
+    // Phase 3 - final section sums
+    for (unsigned int i { 0 }; i < COARSE_FACTOR; ++i) {
+        unsigned int idx { threadIdx.x*COARSE_FACTOR + i};
+        if (idx < n) {
+            unsigned int section_idx { idx / COARSE_FACTOR };
+            if (section_idx > 0) {
+                buffer[idx] += last_elements[section_idx - 1];
+            }
+            y[idx] = buffer[idx];
+        }
+    }
+}
