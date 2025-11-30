@@ -2,8 +2,8 @@
 #include "utils.hpp"
 
 namespace {
-    constexpr int m { 32768 };
-    constexpr int n { 32768 };
+    constexpr int m { 16384 };
+    constexpr int n { 16384 };
     constexpr int benchWarmupIters { 0 };
     constexpr int benchRepeatIters { 1 };
 }
@@ -47,6 +47,8 @@ int main() {
     std::cout << "\nCPU elapsed time: " << sequentialTime << "s\n";
 
     runAndCheck(mergeBasic, "Naive Kernel", A, B, outCPU);
+    runAndCheck(mergeTiled, "Tiled Kernel", A, B, outCPU);
+    runAndCheck(mergeCircularBuffer, "Circular Buffer Kernel", A, B, outCPU);
 
     return 0;
 }

@@ -3,3 +3,5 @@
 #include "kernels.cuh"  // for mergeSequential
 
 void mergeBasic(const int* A, const int m, const int* B, const int n, int* C);
+void mergeTiled(const int* A, const int m, const int* B, const int n, int* C);
+void mergeCircularBuffer(const int* A, const int m, const int* B, const int n, int* C);
