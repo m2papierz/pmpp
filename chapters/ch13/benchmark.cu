@@ -2,7 +2,7 @@
 #include "utils.hpp"
 
 namespace {
-    constexpr int n { 100000 };
+    constexpr int n { 1000000 };
     constexpr int benchWarmupIters { 0 };
     constexpr int benchRepeatIters { 1 };
 }
@@ -52,6 +52,7 @@ int main() {
     }
 
     runAndCheck(radixSort, "Basic Kernel", inputArr, outCPU);
+    runAndCheck(radixSortCoalesced, "Coalesced Kernel", inputArr, outCPU);
 
     return 0;
 }
