@@ -56,6 +56,7 @@ int main() {
     runAndCheck(radixSortCoalescedMultibit, "Coalesced Multibit Kernel", inputArr, outCPU);
     runAndCheck(radixSortCoalescedCoarse, "Thread Coarsed Kernel", inputArr, outCPU);
     runAndCheck(mergeSort, "Merge Kernel", inputArr, outCPU);
+    runAndCheck(thrustSortGPU, "Thrust sort", inputArr, outCPU);
 
     return 0;
 }

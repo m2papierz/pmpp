@@ -6,6 +6,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/scan.h>
 #include <thrust/copy.h>
+#include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 
 void radixSortCPU(
@@ -440,4 +441,31 @@ void mergeSort(
 
     CUDA_CHECK(cudaFree(d_src));
     CUDA_CHECK(cudaFree(d_dst));
+}
+
+
+void thrustSortGPU(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int n
+) {
+    std::size_t sizeArr { static_cast<std::size_t>(n) * sizeof(unsigned int) };
+
+    unsigned int* d_arr { nullptr };
+    CUDA_CHECK(cudaMalloc(&d_arr, sizeArr));
+
+    // Copy input to device
+    CUDA_CHECK(cudaMemcpy(d_arr, inputArr, sizeArr, cudaMemcpyHostToDevice));
+
+    // Wrap raw pointer with thrust device_ptr
+    thrust::device_ptr<unsigned int> d_begin(d_arr);
+    thrust::device_ptr<unsigned int> d_end = d_begin + n;
+
+    // Best Thrust device sort (radix-based for unsigned ints)
+    thrust::sort(thrust::device, d_begin, d_end);
+
+    // Copy sorted result back
+    CUDA_CHECK(cudaMemcpy(outputArr, d_arr, sizeArr, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_arr));
 }

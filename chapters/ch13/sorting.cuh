@@ -6,3 +6,4 @@ void radixSortCoalesced(const unsigned int* inputArr, unsigned int* outputArr, c
 void radixSortCoalescedMultibit(const unsigned int* inputArr, unsigned int* outputArr, const unsigned int n);
 void radixSortCoalescedCoarse(const unsigned int* inputArr, unsigned int* outputArr, const unsigned int n);
 void mergeSort(const unsigned int* inputArr, unsigned int* outputArr, const unsigned int n);
+void thrustSortGPU(const unsigned int* inputArr, unsigned int* outputArr, const unsigned int n);
