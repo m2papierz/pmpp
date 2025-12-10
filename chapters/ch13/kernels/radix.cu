@@ -189,3 +189,111 @@ __global__ void scatterCoalescedMultibitKernel(
     unsigned int dest { globalBucketStart + blockOffset + localIdx };
     outputArr[dest] = key;
 }
+
+__global__ void localSortCoarseKernel(
+    const unsigned int* inputArr,
+    unsigned int* localScan,
+    unsigned int* blockZeros,
+    unsigned int* blockOnes,
+    const unsigned int n,
+    const unsigned int iter
+) {
+    unsigned int tid { threadIdx.x };
+    unsigned int block { blockIdx.x };
+    unsigned int threads { blockDim.x };
+    unsigned int blockBase{ block * threads * COARSE_FACTOR };
+
+    if (blockBase >= n) return;
+
+    unsigned int maxBlockElems { threads * COARSE_FACTOR };
+    unsigned int blockElems{ min(maxBlockElems, n - blockBase) };
+
+    __shared__ typename BlockScanT::TempStorage scanTemp;
+
+    // First pass: compute bits for this thread's elements and total ones in this thread
+    unsigned int onesInThread = 0;
+    unsigned int bits[COARSE_FACTOR];
+
+    for (unsigned int k = 0; k < COARSE_FACTOR; ++k) {
+        unsigned int logicalIdx = tid * COARSE_FACTOR + k;
+        unsigned int gid = blockBase + logicalIdx;
+
+        if (logicalIdx < blockElems) {
+            unsigned int key = inputArr[gid];
+            unsigned int bit = (key >> iter) & 1u;
+            bits[k] = bit;
+            onesInThread += bit;
+        } else {
+            bits[k] = 0;
+        }
+    }
+
+    // Block-wide exclusive scan on per-thread ones
+    unsigned int threadOnesBefore { 0 };
+    unsigned int totalOnesInBlock { 0 };
+    BlockScanT(scanTemp).ExclusiveSum(onesInThread, threadOnesBefore, totalOnesInBlock);
+
+    // Second pass: assign per-element localScan = #ones before this element in block
+    unsigned int runningOnes = threadOnesBefore;
+
+    for (unsigned int k = 0; k < COARSE_FACTOR; ++k) {
+        unsigned int logicalIdx = tid * COARSE_FACTOR + k;
+        if (logicalIdx >= blockElems) break;
+
+        unsigned int gid = blockBase + logicalIdx;
+
+        // onesBefore for this element
+        localScan[gid] = runningOnes;
+
+        // update running ones count
+        if (bits[k] == 1u) {
+            ++runningOnes;
+        }
+    }
+
+    // One thread writes block counts
+    if (tid == 0) {
+        blockOnes[block] = totalOnesInBlock;
+        blockZeros[block] = blockElems - totalOnesInBlock;
+    }
+}
+
+__global__ void scatterCoalescedCoarseKernel(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int* localScan,
+    const unsigned int* blockZeroOffsets,
+    const unsigned int* blockOneOffsets,
+    const unsigned int totalZeros,
+    const unsigned int n,
+    const unsigned int iter
+) {
+    unsigned int tid { threadIdx.x };
+    unsigned int block { blockIdx.x };
+    unsigned int threads { blockDim.x };
+    unsigned int blockBase{ block * threads * COARSE_FACTOR };
+
+    if (blockBase >= n) return;
+
+    const unsigned int maxBlockElems { threads * COARSE_FACTOR };
+    const unsigned int blockElems { min(maxBlockElems, n - blockBase) };
+
+    for (unsigned int k = 0; k < COARSE_FACTOR; ++k) {
+        unsigned int logicalIdx = tid * COARSE_FACTOR + k;
+        if (logicalIdx >= blockElems) break;
+
+        unsigned int gid = blockBase + logicalIdx;
+        unsigned int key = inputArr[gid];
+        unsigned int bit = (key >> iter) & 1u;
+        unsigned int onesBefore = localScan[gid];
+
+        unsigned int dest;
+        if (bit == 0u) {
+            // zerosBefore = logicalIdx - onesBefore
+            dest = blockZeroOffsets[block] + (logicalIdx - onesBefore);
+        } else {
+            dest = totalZeros + blockOneOffsets[block] + onesBefore;
+        }
+        outputArr[dest] = key;
+    }
+}
