@@ -5,6 +5,7 @@
 
 #define NUM_BITS 32
 #define BLOCK_SIZE 1024
+#define RADIX_BITS 2
 
 using BlockScanT = cub::BlockScan<unsigned int, BLOCK_SIZE>;
 
@@ -41,4 +42,27 @@ __global__ void scatterCoalescedKernel(
     const unsigned int totalZeros,
     const unsigned int n,
     const unsigned int iter
+);
+
+__global__ void localSortMultibitKernel(
+    const unsigned int* inputArr,
+    unsigned int* localScan,
+    unsigned int* blockBucketCounts,
+    unsigned int* bucketTotals,
+    const unsigned int n,
+    const unsigned int shift,
+    const unsigned int numBlocks,
+    const unsigned int radix
+);
+
+__global__ void scatterCoalescedMultibitKernel(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int* localScan,
+    const unsigned int* blockBucketOffsets,
+    const unsigned int* bucketStarts,
+    const unsigned int n,
+    const unsigned int shift,
+    const unsigned int numBlocks,
+    const unsigned int radix
 );

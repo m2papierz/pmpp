@@ -108,3 +108,84 @@ __global__ void scatterCoalescedKernel(
         outputArr[dest] = key;
     }
 }
+
+__global__ void localSortMultibitKernel(
+    const unsigned int* inputArr,
+    unsigned int* localScan,
+    unsigned int* blockBucketCounts,
+    unsigned int* bucketTotals,
+    const unsigned int n,
+    const unsigned int shift,
+    const unsigned int numBlocks,
+    const unsigned int radix
+) {
+    unsigned int tid { threadIdx.x };
+    unsigned int block { blockIdx.x };
+    unsigned int blockBase { block*blockDim.x };
+    unsigned int gid {blockBase + tid };
+
+    if (blockBase >= n) return;
+
+    bool isActive = (gid < n);
+
+    unsigned int key { 0 };
+    unsigned int bucket { 0 };
+    if (isActive) {
+        key = inputArr[gid];
+        bucket = (key >> shift) & (radix - 1u);
+    }
+
+    // Per-block histogram in shared memory
+    __shared__ typename BlockScanT::TempStorage scanTemp;
+
+    // Initialize shared histogram
+    for (unsigned int b { 0 }; b < radix; ++b) {
+        unsigned int flag = (isActive && (bucket == b)) ? 1u : 0u;
+
+        unsigned int prefix { 0 };
+        unsigned int total  { 0 };
+        BlockScanT(scanTemp).ExclusiveSum(flag, prefix, total);
+
+        // Threads belonging to bucket b store their local index
+        if (isActive && (bucket == b)) {
+            localScan[gid] = prefix;
+        }
+
+        // One thread per block writes per-block count and updates global totals
+        if (tid == 0) {
+            blockBucketCounts[b * numBlocks + block] = total;
+            if (total > 0) {
+                atomicAdd(&bucketTotals[b], total);
+            }
+        }
+        __syncthreads();
+    }
+}
+
+__global__ void scatterCoalescedMultibitKernel(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int* localScan,
+    const unsigned int* blockBucketOffsets,
+    const unsigned int* bucketStarts,
+    const unsigned int n,
+    const unsigned int shift,
+    const unsigned int numBlocks,
+    const unsigned int radix
+) {
+    unsigned int tid { threadIdx.x };
+    unsigned int block { blockIdx.x };
+    unsigned int gid { block*blockDim.x + tid };
+
+    if (gid >= n) return;
+
+    unsigned int key { inputArr[gid] };
+    unsigned int bucket { (key >> shift) & (radix - 1u) };
+
+    unsigned int localIdx { localScan[gid] };
+    unsigned int blockOffset { blockBucketOffsets[bucket*numBlocks + block] };
+    unsigned int globalBucketStart { bucketStarts[bucket] };
+
+    unsigned int dest { globalBucketStart + blockOffset + localIdx };
+    outputArr[dest] = key;
+}

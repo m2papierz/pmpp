@@ -196,3 +196,109 @@ void radixSortCoalesced(
     CUDA_CHECK(cudaFree(blockOnesOffset_d));
     CUDA_CHECK(cudaFree(outputArr_d));
 }
+
+void radixSortCoalescedMultibit(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int n
+) {
+    unsigned int radix { 1u << RADIX_BITS };
+
+    dim3 blockSize(BLOCK_SIZE);
+    dim3 gridSize(utils::cdiv(n, BLOCK_SIZE));
+    unsigned int numBlocks { gridSize.x };
+
+    std::size_t sizeArr { static_cast<std::size_t>(n)*sizeof(unsigned int) };
+    std::size_t sizePerBucket { static_cast<std::size_t>(numBlocks)*sizeof(unsigned int) };
+    std::size_t sizeBlockBuckets{ static_cast<std::size_t>(radix)*sizePerBucket };
+
+    // Device buffers
+    unsigned int* inputArr_d { nullptr };
+    unsigned int* outputArr_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&inputArr_d,  sizeArr));
+    CUDA_CHECK(cudaMalloc(&outputArr_d, sizeArr));
+
+    unsigned int* localScan_d { nullptr };
+    CUDA_CHECK(cudaMalloc(&localScan_d, sizeArr));
+
+    unsigned int* blockBucketCounts_d { nullptr };  // [radix][numBlocks]
+    unsigned int* blockBucketOffsets_d { nullptr }; // [radix][numBlocks]
+    CUDA_CHECK(cudaMalloc(&blockBucketCounts_d, sizeBlockBuckets));
+    CUDA_CHECK(cudaMalloc(&blockBucketOffsets_d, sizeBlockBuckets));
+
+    unsigned int* bucketTotals_d { nullptr }; // [radix]
+    unsigned int* bucketStarts_d { nullptr }; // [radix]
+    CUDA_CHECK(cudaMalloc(&bucketTotals_d, radix*sizeof(unsigned int)));
+    CUDA_CHECK(cudaMalloc(&bucketStarts_d, radix*sizeof(unsigned int)));
+
+    CUDA_CHECK(cudaMemcpy(inputArr_d, inputArr, sizeArr, cudaMemcpyHostToDevice));
+
+    // Process RADIX_BITS bits per pass
+    for (unsigned int shift { 0 }; shift < NUM_BITS; shift += RADIX_BITS) {
+        // Reset bucket totals
+        CUDA_CHECK(cudaMemset(bucketTotals_d, 0, radix*sizeof(unsigned int)));
+
+        // 1) Local bucket counts + local indices in each block
+        localSortMultibitKernel<<<gridSize, blockSize>>>(
+            inputArr_d,
+            localScan_d,
+            blockBucketCounts_d,
+            bucketTotals_d,
+            n,
+            shift,
+            numBlocks,
+            radix
+        );
+        CUDA_CHECK(cudaGetLastError());
+
+        // 2) Exclusive scan over blocks for each bucket -> per-block bucket offsets
+        for (unsigned int b { 0 }; b < radix; ++b) {
+            unsigned int* countsBegin  { blockBucketCounts_d   + b*numBlocks };
+            unsigned int* offsetsBegin { blockBucketOffsets_d  + b*numBlocks };
+
+            thrust::exclusive_scan(
+                thrust::device,
+                countsBegin,
+                countsBegin + numBlocks,
+                offsetsBegin
+            );
+        }
+
+        // 3) Exclusive scan over bucketTotals -> global bucket starts
+        thrust::exclusive_scan(
+            thrust::device,
+            bucketTotals_d,
+            bucketTotals_d + radix,
+            bucketStarts_d
+        );
+
+        // 4) Scatter using stable indices
+        scatterCoalescedMultibitKernel<<<gridSize, blockSize>>>(
+            inputArr_d,
+            outputArr_d,
+            localScan_d,
+            blockBucketOffsets_d,
+            bucketStarts_d,
+            n,
+            shift,
+            numBlocks,
+            radix
+        );
+        CUDA_CHECK(cudaGetLastError());
+
+        // 5) Swap buffers for next pass
+        std::swap(inputArr_d, outputArr_d);
+    }
+
+    // Copy back (inputArr_d holds the final result after last swap)
+    CUDA_CHECK(cudaMemcpy(outputArr, inputArr_d, sizeArr, cudaMemcpyDeviceToHost));
+
+    // Cleanup
+    CUDA_CHECK(cudaFree(inputArr_d));
+    CUDA_CHECK(cudaFree(outputArr_d));
+    CUDA_CHECK(cudaFree(localScan_d));
+    CUDA_CHECK(cudaFree(blockBucketCounts_d));
+    CUDA_CHECK(cudaFree(blockBucketOffsets_d));
+    CUDA_CHECK(cudaFree(bucketTotals_d));
+    CUDA_CHECK(cudaFree(bucketStarts_d));
+}

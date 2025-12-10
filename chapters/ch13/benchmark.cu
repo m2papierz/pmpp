@@ -53,6 +53,7 @@ int main() {
 
     runAndCheck(radixSort, "Basic Kernel", inputArr, outCPU);
     runAndCheck(radixSortCoalesced, "Coalesced Kernel", inputArr, outCPU);
+    runAndCheck(radixSortCoalescedMultibit, "Coalesced Multibit Kernel", inputArr, outCPU);
 
     return 0;
 }
