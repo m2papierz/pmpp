@@ -55,6 +55,7 @@ int main() {
     runAndCheck(radixSortCoalesced, "Coalesced Kernel", inputArr, outCPU);
     runAndCheck(radixSortCoalescedMultibit, "Coalesced Multibit Kernel", inputArr, outCPU);
     runAndCheck(radixSortCoalescedCoarse, "Thread Coarsed Kernel", inputArr, outCPU);
+    runAndCheck(mergeSort, "Merge Kernel", inputArr, outCPU);
 
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "sorting.cuh"
 #include "kernels/radix.cuh"
+#include "kernels/merge.cuh"
 #include "utils.hpp"
 
 #include <thrust/device_vector.h>
@@ -399,4 +400,44 @@ void radixSortCoalescedCoarse(
     CUDA_CHECK(cudaFree(blockOnes_d));
     CUDA_CHECK(cudaFree(blockZerosOffset_d));
     CUDA_CHECK(cudaFree(blockOnesOffset_d));
+}
+
+void mergeSort(
+    const unsigned int* inputArr,
+    unsigned int* outputArr,
+    const unsigned int n
+) {
+    std::size_t sizeArr { static_cast<std::size_t>(n)*sizeof(unsigned int) };
+
+    unsigned int* d_src { nullptr };
+    unsigned int* d_dst { nullptr };
+    CUDA_CHECK(cudaMalloc(&d_src, sizeArr));
+    CUDA_CHECK(cudaMalloc(&d_dst, sizeArr));
+
+    CUDA_CHECK(cudaMemcpy(d_src, inputArr, sizeArr, cudaMemcpyHostToDevice));
+
+    // Bottom-up iterative merge sort on device
+    for (unsigned int width = 1; width < n; width *= 2) {
+        unsigned int numMerges = (n + 2 * width - 1) / (2 * width);  // ceil(n / (2*width))
+
+        dim3 blockSize(BLOCK_SIZE);
+        dim3 gridSize(numMerges);
+
+        mergeRangesKernel<<<gridSize, blockSize>>>(
+            d_src,
+            d_dst,
+            n,
+            width
+        );
+        CUDA_CHECK(cudaGetLastError());
+
+        // For next pass, swap src and dst
+        std::swap(d_src, d_dst);
+    }
+
+    // After the last swap, d_src holds the sorted data
+    CUDA_CHECK(cudaMemcpy(outputArr, d_src, sizeArr, cudaMemcpyDeviceToHost));
+
+    CUDA_CHECK(cudaFree(d_src));
+    CUDA_CHECK(cudaFree(d_dst));
 }
