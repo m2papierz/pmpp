@@ -19,9 +19,17 @@ namespace Random {
 
     inline std::mt19937 mt{ generate() };
 
-    // Generate a random value between [min, max] (inclusive)
-    template <typename T>
-	T get(T min, T max) {
-		return std::uniform_int_distribution<T>{min, max}(mt);
-	}
+    // Integers -> uniform_int_distribution
+    template <std::integral T>
+    T get(T min, T max) {
+        std::uniform_int_distribution<T> dist(min, max);
+        return dist(mt);
+    }
+
+    // Floats -> uniform_real_distribution
+    template <std::floating_point T>
+    T get(T min, T max) {
+        std::uniform_real_distribution<T> dist(min, max);
+        return dist(mt);
+    }
 }
