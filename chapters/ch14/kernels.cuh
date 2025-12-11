@@ -9,3 +9,9 @@ __global__ void spmv_coo_kernel(
     const float* __restrict__ x,
     float* __restrict__ y
 );
+
+__global__ void spmv_crs_kernel(
+    DeviceCRSMatrix crsMatrix,
+    const float* __restrict__ x,
+    float* __restrict__ y
+);
